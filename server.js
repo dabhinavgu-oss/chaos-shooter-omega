@@ -8,44 +8,45 @@ const io = new Server(server);
 
 app.use(express.static("public"));
 
-// SIMPLE LOGIN STORE (temporary memory)
-const users = {}; // username -> password
-const loggedIn = {}; // socket.id -> username
-
+const users = {};
 const players = {};
 
 io.on("connection", (socket) => {
   console.log("connected:", socket.id);
 
-  // LOGIN
+  // REGISTER
   socket.on("register", ({ username, password }) => {
+    if (!username || !password) {
+      socket.emit("loginResult", { success: false, msg: "Missing fields" });
+      return;
+    }
+
     if (users[username]) {
       socket.emit("loginResult", { success: false, msg: "User exists" });
       return;
     }
 
     users[username] = password;
-    socket.emit("loginResult", { success: true });
+    socket.emit("loginResult", { success: true, msg: "Registered" });
   });
 
+  // LOGIN
   socket.on("login", ({ username, password }) => {
-    if (users[username] === password) {
-      loggedIn[socket.id] = username;
-
+    if (users[username] && users[username] === password) {
       players[socket.id] = {
         x: 400,
         y: 300,
         username
       };
 
-      socket.emit("loginResult", { success: true });
+      socket.emit("loginResult", { success: true, username });
       io.emit("playersUpdate", players);
     } else {
       socket.emit("loginResult", { success: false, msg: "Wrong login" });
     }
   });
 
-  // MOVEMENT
+  // MOVE
   socket.on("move", (data) => {
     if (!players[socket.id]) return;
 
@@ -62,7 +63,6 @@ io.on("connection", (socket) => {
   // DISCONNECT
   socket.on("disconnect", () => {
     delete players[socket.id];
-    delete loggedIn[socket.id];
     io.emit("removePlayer", socket.id);
   });
 });

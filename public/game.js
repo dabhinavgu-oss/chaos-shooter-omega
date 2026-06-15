@@ -23,6 +23,11 @@ const otherPlayers = {};
 window.addEventListener("keydown", e => keys[e.key.toLowerCase()] = true);
 window.addEventListener("keyup", e => keys[e.key.toLowerCase()] = false);
 
+window.addEventListener("blur", () => {
+  Object.keys(keys).forEach(key => {
+    keys[key] = false;
+  });
+});
 // LOGIN
 function login() {
   socket.emit("login", {
@@ -78,12 +83,14 @@ function update() {
   if (keys["a"]) player.x -= player.speed;
   if (keys["d"]) player.x += player.speed;
 
+  player.x = Math.max(0, Math.min(canvas.width - player.size, player.x));
+  player.y = Math.max(0, Math.min(canvas.height - player.size, player.y));
+
   socket.emit("move", {
     x: player.x,
     y: player.y
   });
 }
-
 // DRAW
 function draw() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);

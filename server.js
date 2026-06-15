@@ -9,64 +9,96 @@ const io = new Server(server);
 app.use(express.static("public"));
 
 const users = {};
+const activeUsers = {};
 const players = {};
 
 io.on("connection", (socket) => {
-  console.log("connected:", socket.id);
+  console.log("Connected:", socket.id);
 
   // REGISTER
   socket.on("register", ({ username, password }) => {
     if (!username || !password) {
-      socket.emit("loginResult", { success: false, msg: "Missing fields" });
+      socket.emit("loginResult", {
+        success: false,
+        msg: "Missing username or password"
+      });
       return;
     }
 
     if (users[username]) {
-      socket.emit("loginResult", { success: false, msg: "User exists" });
+      socket.emit("loginResult", {
+        success: false,
+        msg: "User already exists"
+      });
       return;
     }
 
     users[username] = password;
-    socket.emit("loginResult", { success: true, msg: "Registered" });
+
+    socket.emit("loginResult", {
+      success: true,
+      msg: "Registered successfully"
+    });
   });
 
   // LOGIN
   socket.on("login", ({ username, password }) => {
-    if (users[username] && users[username] === password) {
-      players[socket.id] = {
-        x: 400,
-        y: 300,
-        username
-      };
-
-      socket.emit("loginResult", { success: true, username });
-      io.emit("playersUpdate", players);
-    } else {
-      socket.emit("loginResult", { success: false, msg: "Wrong login" });
+    if (!(users[username] && users[username] === password)) {
+      socket.emit("loginResult", {
+        success: false,
+        msg: "Wrong username or password"
+      });
+      return;
     }
+
+    if (activeUsers[username]) {
+      socket.emit("loginResult", {
+        success: false,
+        msg: "Account already logged in"
+      });
+      return;
+    }
+
+    activeUsers[username] = socket.id;
+
+    players[socket.id] = {
+      username,
+      x: 400,
+      y: 300,
+      health: 100
+    };
+
+    socket.emit("loginResult", {
+      success: true,
+      username
+    });
+
+    io.emit("playersUpdate", players);
   });
 
-  // MOVE
-  socket.on("move", (data) => {
+  // MOVEMENT
+  socket.on("move", ({ x, y }) => {
     if (!players[socket.id]) return;
 
-    players[socket.id].x = data.x;
-    players[socket.id].y = data.y;
+    players[socket.id].x = x;
+    players[socket.id].y = y;
 
     socket.broadcast.emit("playerMoved", {
       id: socket.id,
-      x: data.x,
-      y: data.y
+      x,
+      y
     });
   });
 
   // DISCONNECT
   socket.on("disconnect", () => {
-    delete players[socket.id];
-    io.emit("removePlayer", socket.id);
-  });
-});
+    console.log("Disconnected:", socket.id);
 
-server.listen(process.env.PORT || 3000, () => {
-  console.log("Server running");
-});
+    if (players[socket.id]) {
+      const username = players[socket.id].username;
+      delete activeUsers[username];
+    }
+
+    delete players[socket.id];
+
+    io.emit("removePlayer", socket

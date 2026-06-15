@@ -90,15 +90,20 @@ io.on("connection", (socket) => {
     });
   });
 
-  // DISCONNECT
-  socket.on("disconnect", () => {
-    console.log("Disconnected:", socket.id);
+ // DISCONNECT
+socket.on("disconnect", () => {
+  console.log("Disconnected:", socket.id);
 
-    if (players[socket.id]) {
-      const username = players[socket.id].username;
-      delete activeUsers[username];
-    }
+  if (players[socket.id]) {
+    const username = players[socket.id].username;
+    delete activeUsers[username];
+  }
 
-    delete players[socket.id];
+  delete players[socket.id];
 
-    io.emit("removePlayer", socket
+  io.emit("removePlayer", socket.id);
+});
+
+server.listen(process.env.PORT || 3000, () => {
+  console.log("Server running");
+});

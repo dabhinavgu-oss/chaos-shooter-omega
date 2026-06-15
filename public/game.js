@@ -56,13 +56,20 @@ socket.on("loginResult", (data) => {
 
 // PLAYERS
 socket.on("playersUpdate", (players) => {
+
+  // Clear old players
+  Object.keys(otherPlayers).forEach(id => {
+    delete otherPlayers[id];
+  });
+
+  // Add current players
   Object.keys(players).forEach(id => {
     if (id !== socket.id) {
       otherPlayers[id] = players[id];
     }
   });
-});
 
+});
 socket.on("playerMoved", (data) => {
   if (otherPlayers[data.id]) {
     otherPlayers[data.id].x = data.x;

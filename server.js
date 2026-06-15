@@ -10,6 +10,23 @@ app.use(express.static("public"));
 
 const players = {};
 const bullets = [];
+const enemies = [];
+
+// 👾 spawn enemies
+function spawnEnemy() {
+  return {
+    id: Math.random().toString(36).substr(2, 9),
+    x: Math.random() * 2000,
+    y: Math.random() * 2000,
+    size: 30,
+    hp: 50
+  };
+}
+
+// initial enemies
+for (let i = 0; i < 8; i++) {
+  enemies.push(spawnEnemy());
+}
 
 io.on("connection", (socket) => {
   console.log("Connected:", socket.id);
@@ -17,13 +34,15 @@ io.on("connection", (socket) => {
   players[socket.id] = {
     x: 400,
     y: 300,
-    size: 30
+    size: 30,
+    hp: 100
   };
 
-  socket.emit("init", { id: socket.id, players });
+  socket.emit("init", { id: socket.id, players, enemies });
 
   socket.broadcast.emit("players", players);
 
+  // movement
   socket.on("move", (data) => {
     if (!players[socket.id]) return;
 
@@ -37,19 +56,17 @@ io.on("connection", (socket) => {
     });
   });
 
-  // 🔫 NEW: shoot event
+  // shooting
   socket.on("shoot", (data) => {
-    const bullet = {
+    bullets.push({
       id: socket.id,
       x: data.x,
       y: data.y,
       dx: data.dx,
       dy: data.dy
-    };
+    });
 
-    bullets.push(bullet);
-
-    io.emit("bullet", bullet);
+    io.emit("bullet", bullets[bullets.length - 1]);
   });
 
   socket.on("disconnect", () => {
@@ -57,6 +74,35 @@ io.on("connection", (socket) => {
     io.emit("removePlayer", socket.id);
   });
 });
+
+// 🔥 game loop (server-side logic)
+setInterval(() => {
+  // move bullets
+  for (let i = bullets.length - 1; i >= 0; i--) {
+    const b = bullets[i];
+    b.x += b.dx;
+    b.y += b.dy;
+
+    // check enemy hit
+    for (let e of enemies) {
+      const dist = Math.hypot(b.x - e.x, b.y - e.y);
+
+      if (dist < e.size) {
+        e.hp -= 25;
+        bullets.splice(i, 1);
+
+        if (e.hp <= 0) {
+          const index = enemies.indexOf(e);
+          enemies.splice(index, 1);
+          enemies.push(spawnEnemy());
+        }
+        break;
+      }
+    }
+  }
+
+  io.emit("sync", { enemies, bullets });
+}, 1000 / 30);
 
 server.listen(process.env.PORT || 3000, () => {
   console.log("Server running");

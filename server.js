@@ -9,6 +9,7 @@ const io = new Server(server);
 app.use(express.static("public"));
 
 const players = {};
+const bullets = [];
 
 io.on("connection", (socket) => {
   console.log("Connected:", socket.id);
@@ -19,7 +20,9 @@ io.on("connection", (socket) => {
     size: 30
   };
 
-  io.emit("players", players);
+  socket.emit("init", { id: socket.id, players });
+
+  socket.broadcast.emit("players", players);
 
   socket.on("move", (data) => {
     if (!players[socket.id]) return;
@@ -32,6 +35,21 @@ io.on("connection", (socket) => {
       x: data.x,
       y: data.y
     });
+  });
+
+  // 🔫 NEW: shoot event
+  socket.on("shoot", (data) => {
+    const bullet = {
+      id: socket.id,
+      x: data.x,
+      y: data.y,
+      dx: data.dx,
+      dy: data.dy
+    };
+
+    bullets.push(bullet);
+
+    io.emit("bullet", bullet);
   });
 
   socket.on("disconnect", () => {

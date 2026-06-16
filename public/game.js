@@ -1,12 +1,7 @@
 const socket = io();
+
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
-
-const joystick = document.getElementById("joystick");
-const shootBtn = document.getElementById("shootBtn") || null;
-let joyX = 0;
-let joyY = 0;
-let mobileShoot = false;
 
 canvas.width = window.innerWidth;
 canvas.height = window.innerHeight;
@@ -16,7 +11,6 @@ const players = {};
 
 let bullets = [];
 let enemies = [];
-
 let myId = null;
 
 // ======================
@@ -94,68 +88,31 @@ window.addEventListener("mousedown", (e) => {
   });
 
 });
-  });
-}
-
-  if (!loggedIn) return;
-
-  socket.emit("shoot", {
-    x: player.x,
-    y: player.y,
-
-    dx: Math.cos(angle) * 12,
-    dy: Math.sin(angle) * 12
-  });
-
-});
-  if (!loggedIn) return;
-
-  socket.emit("shoot", {
-    x: player.x,
-    y: player.y,
-
-    dx: Math.cos(angle) * 12,
-    dy: Math.sin(angle) * 12
-  });
-
-});
-  if (!players[myId]) return;
-
-  const player = players[myId];
-
-  const dx = e.clientX - player.x;
-  const dy = e.clientY - player.y;
-
-  const length = Math.hypot(dx, dy);
-
-  if (length === 0) return;
-
-  socket.emit("shoot", {
-    x: player.x,
-    y: player.y,
-    dx: (dx / length) * 12,
-    dy: (dy / length) * 12
-  });
-});
 
 // ======================
 // UPDATE
 // ======================
 
 function update() {
+
   if (!players[myId]) return;
 
   const player = players[myId];
-player.x += joyX * player.speed;
-  player.y += joyY * player.speed;
 
   if (keys["w"]) player.y -= 5;
   if (keys["s"]) player.y += 5;
   if (keys["a"]) player.x -= 5;
   if (keys["d"]) player.x += 5;
 
-  player.x = Math.max(0, Math.min(canvas.width - player.size, player.x));
-  player.y = Math.max(0, Math.min(canvas.height - player.size, player.y));
+  player.x = Math.max(
+    0,
+    Math.min(canvas.width - player.size, player.x)
+  );
+
+  player.y = Math.max(
+    0,
+    Math.min(canvas.height - player.size, player.y)
+  );
 
   socket.emit("move", {
     x: player.x,
@@ -164,10 +121,11 @@ player.x += joyX * player.speed;
 }
 
 // ======================
-// DRAW
+// DRAW GRID
 // ======================
 
 function drawGrid() {
+
   ctx.strokeStyle = "#dddddd";
 
   for (let x = 0; x < canvas.width; x += 50) {
@@ -183,15 +141,27 @@ function drawGrid() {
     ctx.lineTo(canvas.width, y);
     ctx.stroke();
   }
+
 }
 
+// ======================
+// DRAW
+// ======================
+
 function draw() {
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  ctx.clearRect(
+    0,
+    0,
+    canvas.width,
+    canvas.height
+  );
 
   drawGrid();
 
-  // enemies
+  // ENEMIES
   enemies.forEach(enemy => {
+
     ctx.fillStyle = "purple";
 
     ctx.fillRect(
@@ -201,8 +171,8 @@ function draw() {
       enemy.size
     );
 
-    // hp bar
     ctx.fillStyle = "red";
+
     ctx.fillRect(
       enemy.x,
       enemy.y - 8,
@@ -211,19 +181,23 @@ function draw() {
     );
 
     ctx.fillStyle = "lime";
+
     ctx.fillRect(
       enemy.x,
       enemy.y - 8,
       (enemy.hp / 50) * enemy.size,
       5
     );
+
   });
 
-  // bullets
+  // BULLETS
   bullets.forEach(bullet => {
+
     ctx.fillStyle = "red";
 
     ctx.beginPath();
+
     ctx.arc(
       bullet.x,
       bullet.y,
@@ -231,11 +205,14 @@ function draw() {
       0,
       Math.PI * 2
     );
+
     ctx.fill();
+
   });
 
-  // players
+  // PLAYERS
   Object.keys(players).forEach(id => {
+
     const p = players[id];
 
     ctx.fillStyle =
@@ -251,14 +228,18 @@ function draw() {
     );
 
     if (id === myId) {
+
       ctx.strokeStyle = "yellow";
+
       ctx.strokeRect(
         p.x - 2,
         p.y - 2,
         p.size + 4,
         p.size + 4
       );
+
     }
+
   });
 
   // UI
@@ -276,6 +257,7 @@ function draw() {
     20,
     60
   );
+
 }
 
 // ======================
@@ -283,10 +265,12 @@ function draw() {
 // ======================
 
 function loop() {
+
   update();
   draw();
 
   requestAnimationFrame(loop);
+
 }
 
 loop();

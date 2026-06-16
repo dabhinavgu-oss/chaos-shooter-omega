@@ -101,7 +101,12 @@ setInterval(() => {
     }
   }
 
-  io.emit("sync", { enemies, bullets });
+ // keep enemy count at 8
+while (enemies.length < 8) {
+  enemies.push(spawnEnemy());
+}
+
+io.emit("sync", { enemies, bullets });
 }, 1000 / 30);
 
 server.listen(process.env.PORT || 3000, () => {

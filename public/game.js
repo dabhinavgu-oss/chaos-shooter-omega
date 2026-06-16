@@ -72,7 +72,8 @@ window.addEventListener("mousedown", (e) => {
   if (!players[myId]) return;
 
   const player = players[myId];
-
+player.x += joyX * 5;
+player.y += joyY * 5;
   const dx = e.clientX - player.x;
   const dy = e.clientY - player.y;
 
@@ -88,7 +89,32 @@ window.addEventListener("mousedown", (e) => {
   });
 
 });
+if (joystick) {
 
+  joystick.addEventListener("touchmove", (e) => {
+
+    e.preventDefault();
+
+    const touch = e.touches[0];
+
+    const rect = joystick.getBoundingClientRect();
+
+    const x = touch.clientX - (rect.left + rect.width / 2);
+    const y = touch.clientY - (rect.top + rect.height / 2);
+
+    joyX = Math.max(-1, Math.min(1, x / 40));
+    joyY = Math.max(-1, Math.min(1, y / 40));
+
+  });
+
+  joystick.addEventListener("touchend", () => {
+
+    joyX = 0;
+    joyY = 0;
+
+  });
+
+}
 // ======================
 // UPDATE
 // ======================
@@ -288,6 +314,8 @@ let bullets = [];
 let enemies = [];
 let myId = null;
 
+let joyX = 0;
+let joyY = 0;
 // ======================
 // SOCKET EVENTS
 // ======================

@@ -102,6 +102,41 @@ setInterval(() => {
   }
 
  // keep enemy count at 8
+ io.emit("bullet", bullets[bullets.length - 1]);
+  });
+
+  socket.on("disconnect", () => {
+    delete players[socket.id];
+    io.emit("removePlayer", socket.id);
+  });
+});
+
+// 🔥 game loop (server-side logic)
+setInterval(() => {
+  // move bullets
+  for (let i = bullets.length - 1; i >= 0; i--) {
+    const b = bullets[i];
+    b.x += b.dx;
+    b.y += b.dy;
+
+    // check enemy hit
+    for (let e of enemies) {
+      const dist = Math.hypot(b.x - e.x, b.y - e.y);
+
+      if (dist < e.size) {
+        e.hp -= 25;
+        bullets.splice(i, 1);
+
+        if (e.hp <= 0) {
+          const index = enemies.indexOf(e);
+          enemies.splice(index, 1);
+          enemies.push(spawnEnemy());
+        }
+        break;
+      }
+    }
+  }
+
 if (enemies.length === 0) {
 
   for (let i = 0; i < 12; i++) {
@@ -109,6 +144,48 @@ if (enemies.length === 0) {
   }
 
 }
+
+// enemy AI
+for (const enemy of enemies) {
+
+  let nearest = null;
+  let nearestDist = Infinity;
+
+  for (const id in players) {
+
+    const player = players[id];
+
+    const dist = Math.hypot(
+      player.x - enemy.x,
+      player.y - enemy.y
+    );
+
+    if (dist < nearestDist) {
+      nearestDist = dist;
+      nearest = player;
+    }
+  }
+
+  if (nearest) {
+
+    const dx = nearest.x - enemy.x;
+    const dy = nearest.y - enemy.y;
+
+    const dist = Math.hypot(dx, dy);
+
+    if (dist > 0) {
+      enemy.x += (dx / dist) * 1.5;
+      enemy.y += (dy / dist) * 1.5;
+    }
+  }
+}
+
+io.emit("sync", { enemies, bullets });
+}, 1000 / 30);
+
+server.listen(process.env.PORT || 3000, () => {
+  console.log("Server running");
+});
 }, 1000 / 30);
 
 server.listen(process.env.PORT || 3000, () => {

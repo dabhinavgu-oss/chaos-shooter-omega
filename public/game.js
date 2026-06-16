@@ -1,7 +1,13 @@
 const socket = io();
-
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
+
+const joystick = document.getElementById("joystick");
+const shootBtn = document.getElementById("shootBtn");
+
+let joyX = 0;
+let joyY = 0;
+let mobileShoot = false;
 
 canvas.width = window.innerWidth;
 canvas.height = window.innerHeight;

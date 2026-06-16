@@ -11,7 +11,7 @@ app.use(express.static("public"));
 const players = {};
 const bullets = [];
 const enemies = [];
-
+let wave = 1;
 // 👾 spawn enemies
 function spawnEnemy() {
   return {

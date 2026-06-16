@@ -75,6 +75,30 @@ window.addEventListener("keyup", (e) => {
 });
 
 window.addEventListener("mousedown", (e) => {
+shootBtn.addEventListener("touchstart", () => {
+
+  if (!loggedIn) return;
+
+  socket.emit("shoot", {
+    x: player.x,
+    y: player.y,
+
+    dx: Math.cos(angle) * 12,
+    dy: Math.sin(angle) * 12
+  });
+
+});
+  if (!loggedIn) return;
+
+  socket.emit("shoot", {
+    x: player.x,
+    y: player.y,
+
+    dx: Math.cos(angle) * 12,
+    dy: Math.sin(angle) * 12
+  });
+
+});
   if (!players[myId]) return;
 
   const player = players[myId];
@@ -102,6 +126,8 @@ function update() {
   if (!players[myId]) return;
 
   const player = players[myId];
+player.x += joyX * player.speed;
+  player.y += joyY * player.speed;
 
   if (keys["w"]) player.y -= 5;
   if (keys["s"]) player.y += 5;

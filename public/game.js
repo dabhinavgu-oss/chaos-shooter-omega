@@ -3,8 +3,7 @@ const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
 
 const joystick = document.getElementById("joystick");
-const shootBtn = document.getElementById("shootBtn");
-
+const shootBtn = document.getElementById("shootBtn") || null;
 let joyX = 0;
 let joyY = 0;
 let mobileShoot = false;
@@ -75,7 +74,20 @@ window.addEventListener("keyup", (e) => {
 });
 
 window.addEventListener("mousedown", (e) => {
-shootBtn.addEventListener("touchstart", () => {
+if (shootBtn) {
+  shootBtn.addEventListener("touchstart", () => {
+
+    if (!loggedIn) return;
+
+    socket.emit("shoot", {
+      x: player.x,
+      y: player.y,
+      dx: Math.cos(angle) * 12,
+      dy: Math.sin(angle) * 12
+    });
+
+  });
+}
 
   if (!loggedIn) return;
 

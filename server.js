@@ -40,11 +40,12 @@ io.on("connection", (socket) => {
   console.log("Connected:", socket.id);
 
   players[socket.id] = {
-    x: 400,
-    y: 300,
-    size: 30,
-    hp: 100
-  };
+  x: 400,
+  y: 300,
+  size: 30,
+  hp: 100,
+  name: "Player"
+};
 
   socket.emit("init", {
     id: socket.id,
@@ -83,13 +84,20 @@ io.on("connection", (socket) => {
     io.emit("bullet", bullet);
   });
 
-  socket.on("disconnect", () => {
-    console.log("Disconnected:", socket.id);
+ socket.on("setName", (name) => {
 
-    delete players[socket.id];
+  if (!players[socket.id]) return;
 
-    io.emit("removePlayer", socket.id);
-  });
+  players[socket.id].name = String(name).substring(0, 16);
+
+  io.emit("players", players);
+
+});
+
+socket.on("disconnect", () => {
+  delete players[socket.id];
+  io.emit("removePlayer", socket.id);
+});
 });
 
 // ======================

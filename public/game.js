@@ -16,6 +16,9 @@ let bullets = [];
 let enemies = [];
 let myId = null;
 
+const nickname =
+  prompt("Enter nickname") || "Player";
+
 let joyX = 0;
 let joyY = 0;
 

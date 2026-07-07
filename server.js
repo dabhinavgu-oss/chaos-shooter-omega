@@ -85,14 +85,11 @@ io.on("connection", (socket) => {
   });
 
  socket.on("setName", (name) => {
-
-  if (!players[socket.id]) return;
-
-  players[socket.id].name = String(name).substring(0, 16);
-
-  io.emit("players", players);
-
-});
+    if (!players[socket.id]) return;
+    const clean = String(name).trim().substring(0, 16) || "Player";
+    players[socket.id].name = clean;
+    io.emit("players", players);
+  });
 
 socket.on("disconnect", () => {
   delete players[socket.id];

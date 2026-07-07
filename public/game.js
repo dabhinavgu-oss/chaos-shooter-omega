@@ -5,6 +5,7 @@ const ctx = canvas.getContext("2d");
 
 const joystick = document.getElementById("joystick");
 const shootBtn = document.getElementById("shootBtn");
+const colorPicker = document.getElementById("colorPicker");
 
 canvas.width = window.innerWidth;
 canvas.height = window.innerHeight;
@@ -19,6 +20,8 @@ let wave = 1;
 
 const nickname = prompt("Enter nickname") || "Player";
 
+let myColor = (colorPicker && colorPicker.value) || "#1e90ff";
+
 let joyX = 0;
 let joyY = 0;
 
@@ -29,6 +32,7 @@ let joyY = 0;
 socket.on("connect", () => {
   myId = socket.id;
   socket.emit("setName", nickname);
+  socket.emit("setColor", myColor);
 });
 
 socket.on("init", (data) => {
@@ -61,6 +65,17 @@ socket.on("sync", (data) => {
 socket.on("removePlayer", (id) => {
   delete players[id];
 });
+
+// ======================
+// COLOR PICKER
+// ======================
+
+if (colorPicker) {
+  colorPicker.addEventListener("input", () => {
+    myColor = colorPicker.value;
+    socket.emit("setColor", myColor);
+  });
+}
 
 // ======================
 // INPUT
@@ -145,6 +160,26 @@ function update() {
 // DRAW
 // ======================
 
+function drawPlayer(id) {
+  const p = players[id];
+  if (!p) return;
+
+  ctx.fillStyle = p.color || "dodgerblue";
+  ctx.fillRect(p.x, p.y, p.size, p.size);
+
+  // Highlight your own player so you can always find yourself
+  if (id === myId) {
+    ctx.strokeStyle = "yellow";
+    ctx.lineWidth = 3;
+    ctx.strokeRect(p.x - 2, p.y - 2, p.size + 4, p.size + 4);
+  }
+
+  ctx.fillStyle = "black";
+  ctx.font = "14px Arial";
+  ctx.textAlign = "center";
+  ctx.fillText(p.name || "Player", p.x + p.size / 2, p.y - 10);
+}
+
 function draw() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
@@ -167,18 +202,11 @@ function draw() {
     ctx.fill();
   });
 
-  // Players + names
+  // Other players first, then yourself on top
   Object.keys(players).forEach(id => {
-    const p = players[id];
-
-    ctx.fillStyle = id === myId ? "black" : "dodgerblue";
-    ctx.fillRect(p.x, p.y, p.size, p.size);
-
-    ctx.fillStyle = "black";
-    ctx.font = "14px Arial";
-    ctx.textAlign = "center";
-    ctx.fillText(p.name || "Player", p.x + p.size / 2, p.y - 10);
+    if (id !== myId) drawPlayer(id);
   });
+  drawPlayer(myId);
 
   // HUD
   ctx.fillStyle = "black";

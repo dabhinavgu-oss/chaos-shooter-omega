@@ -40,13 +40,13 @@ io.on("connection", (socket) => {
   console.log("Connected:", socket.id);
 
   players[socket.id] = {
-  x: 400,
-  y: 300,
+  x: 100 + Math.random() * 600,
+  y: 100 + Math.random() * 400,
   size: 30,
   hp: 100,
-  name: "Player"
+  name: "Player",
+  color: "#1e90ff"
 };
-
   socket.emit("init", {
     id: socket.id,
     players,
@@ -90,7 +90,13 @@ io.on("connection", (socket) => {
     players[socket.id].name = clean;
     io.emit("players", players);
   });
-
+socket.on("setColor", (color) => {
+    if (!players[socket.id]) return;
+    if (typeof color === "string" && /^#[0-9a-fA-F]{6}$/.test(color)) {
+      players[socket.id].color = color;
+      io.emit("players", players);
+    }
+  });
 socket.on("disconnect", () => {
   delete players[socket.id];
   io.emit("removePlayer", socket.id);

@@ -15,9 +15,9 @@ const players = {};
 let bullets = [];
 let enemies = [];
 let myId = null;
+let wave = 1;
 
-const nickname =
-  prompt("Enter nickname") || "Player";
+const nickname = prompt("Enter nickname") || "Player";
 
 let joyX = 0;
 let joyY = 0;
@@ -28,15 +28,13 @@ let joyY = 0;
 
 socket.on("connect", () => {
   myId = socket.id;
+  socket.emit("setName", nickname);
 });
 
 socket.on("init", (data) => {
   myId = data.id;
-
   Object.keys(players).forEach(id => delete players[id]);
-
   Object.assign(players, data.players);
-
   enemies = data.enemies || [];
 });
 
@@ -46,7 +44,6 @@ socket.on("players", (serverPlayers) => {
 
 socket.on("playerMove", (data) => {
   if (!players[data.id]) return;
-
   players[data.id].x = data.x;
   players[data.id].y = data.y;
 });
@@ -58,6 +55,7 @@ socket.on("bullet", (bullet) => {
 socket.on("sync", (data) => {
   enemies = data.enemies || [];
   bullets = data.bullets || [];
+  if (typeof data.wave === "number") wave = data.wave;
 });
 
 socket.on("removePlayer", (id) => {
@@ -77,70 +75,48 @@ window.addEventListener("keyup", (e) => {
 });
 
 window.addEventListener("mousedown", (e) => {
-
   if (!players[myId]) return;
-
   const player = players[myId];
-
   const dx = e.clientX - player.x;
   const dy = e.clientY - player.y;
-
   const length = Math.hypot(dx, dy);
-
   if (length === 0) return;
-
   socket.emit("shoot", {
     x: player.x,
     y: player.y,
     dx: (dx / length) * 12,
     dy: (dy / length) * 12
   });
-
 });
 
 // Mobile joystick
-
 if (joystick) {
-
   joystick.addEventListener("touchmove", (e) => {
-
     e.preventDefault();
-
     const touch = e.touches[0];
     const rect = joystick.getBoundingClientRect();
-
     const x = touch.clientX - (rect.left + rect.width / 2);
     const y = touch.clientY - (rect.top + rect.height / 2);
-
     joyX = Math.max(-1, Math.min(1, x / 40));
     joyY = Math.max(-1, Math.min(1, y / 40));
-
   });
 
   joystick.addEventListener("touchend", () => {
-
     joyX = 0;
     joyY = 0;
-
   });
-
 }
 
 if (shootBtn) {
-
   shootBtn.addEventListener("touchstart", () => {
-
     if (!players[myId]) return;
-
     socket.emit("shoot", {
       x: players[myId].x,
       y: players[myId].y,
       dx: 12,
       dy: 0
     });
-
   });
-
 }
 
 // ======================
@@ -148,9 +124,7 @@ if (shootBtn) {
 // ======================
 
 function update() {
-
   if (!players[myId]) return;
-
   const player = players[myId];
 
   player.x += joyX * 5;
@@ -161,21 +135,10 @@ function update() {
   if (keys["a"]) player.x -= 5;
   if (keys["d"]) player.x += 5;
 
-  player.x = Math.max(
-    0,
-    Math.min(canvas.width - player.size, player.x)
-  );
+  player.x = Math.max(0, Math.min(canvas.width - player.size, player.x));
+  player.y = Math.max(0, Math.min(canvas.height - player.size, player.y));
 
-  player.y = Math.max(
-    0,
-    Math.min(canvas.height - player.size, player.y)
-  );
-
-  socket.emit("move", {
-    x: player.x,
-    y: player.y
-  });
-
+  socket.emit("move", { x: player.x, y: player.y });
 }
 
 // ======================
@@ -183,58 +146,47 @@ function update() {
 // ======================
 
 function draw() {
-
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
+  // Enemies + HP bars
   enemies.forEach(enemy => {
-
     ctx.fillStyle = "purple";
-
-    ctx.fillRect(
-      enemy.x,
-      enemy.y,
-      enemy.size,
-      enemy.size
-    );
-
-  });
-
-  bullets.forEach(bullet => {
+    ctx.fillRect(enemy.x, enemy.y, enemy.size, enemy.size);
 
     ctx.fillStyle = "red";
-
-    ctx.beginPath();
-
-    ctx.arc(
-      bullet.x,
-      bullet.y,
-      4,
-      0,
-      Math.PI * 2
-    );
-
-    ctx.fill();
-
+    ctx.fillRect(enemy.x, enemy.y - 8, enemy.size, 5);
+    ctx.fillStyle = "lime";
+    ctx.fillRect(enemy.x, enemy.y - 8, (enemy.hp / 50) * enemy.size, 5);
   });
 
-  Object.keys(players).forEach(id => {
+  // Bullets
+  bullets.forEach(bullet => {
+    ctx.fillStyle = "red";
+    ctx.beginPath();
+    ctx.arc(bullet.x, bullet.y, 4, 0, Math.PI * 2);
+    ctx.fill();
+  });
 
+  // Players + names
+  Object.keys(players).forEach(id => {
     const p = players[id];
 
-    ctx.fillStyle =
-      id === myId
-        ? "black"
-        : "dodgerblue";
+    ctx.fillStyle = id === myId ? "black" : "dodgerblue";
+    ctx.fillRect(p.x, p.y, p.size, p.size);
 
-    ctx.fillRect(
-      p.x,
-      p.y,
-      p.size,
-      p.size
-    );
-
+    ctx.fillStyle = "black";
+    ctx.font = "14px Arial";
+    ctx.textAlign = "center";
+    ctx.fillText(p.name || "Player", p.x + p.size / 2, p.y - 10);
   });
 
+  // HUD
+  ctx.fillStyle = "black";
+  ctx.textAlign = "left";
+  ctx.font = "20px Arial";
+  ctx.fillText("Wave: " + wave, 20, 30);
+  ctx.fillText("Enemies: " + enemies.length, 20, 60);
+  ctx.fillText("Players: " + Object.keys(players).length, 20, 90);
 }
 
 // ======================
@@ -242,12 +194,9 @@ function draw() {
 // ======================
 
 function loop() {
-
   update();
   draw();
-
   requestAnimationFrame(loop);
-
 }
 
 loop();

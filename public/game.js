@@ -1,230 +1,136 @@
+/* =====================================================================
+   CHAOS SHOOTER OMEGA — 3D Voxel Multiplayer Client
+   Renders the authoritative server state in 3D:
+     - builds terrain from the server's SEED (identical world for all)
+     - sends local movement + shots as INTENT; server decides outcomes
+     - renders other players as colored blocky avatars + shared enemies
+   ===================================================================== */
+
+// ---------- 1) NETWORK + CORE SETUP ----------
 const socket = io();
+let myId = null, running = false;
+let SEED = 0, WORLD = 50, MAX_H = 8;
+const heightMap = [];
 
-const canvas = document.getElementById("game");
-const ctx = canvas.getContext("2d");
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x87ceeb);
+scene.fog = new THREE.Fog(0x87ceeb, 35, 90);
+const camera = new THREE.PerspectiveCamera(75, innerWidth/innerHeight, 0.1, 500);
 
-const joystick = document.getElementById("joystick");
-const shootBtn = document.getElementById("shootBtn");
-const colorPicker = document.getElementById("colorPicker");
+const renderer = new THREE.WebGLRenderer({ antialias: false });
+renderer.setSize(innerWidth, innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));
+document.body.appendChild(renderer.domElement);
+renderer.autoClear = false; // draw world, then gun overlay on top
+const canvas = renderer.domElement;
 
-canvas.width = window.innerWidth;
-canvas.height = window.innerHeight;
+scene.add(new THREE.HemisphereLight(0xffffff, 0x444444, 0.9));
+const sun = new THREE.DirectionalLight(0xffffff, 0.7);
+sun.position.set(30, 60, 20); scene.add(sun);
 
-const keys = {};
-const players = {};
-
-let bullets = [];
-let enemies = [];
-let myId = null;
-let wave = 1;
-
-const nickname = prompt("Enter nickname") || "Player";
-
-let myColor = (colorPicker && colorPicker.value) || "#1e90ff";
-
-let joyX = 0;
-let joyY = 0;
-
-// ======================
-// SOCKET EVENTS
-// ======================
-
-socket.on("connect", () => {
-  myId = socket.id;
-  socket.emit("setName", nickname);
-  socket.emit("setColor", myColor);
-});
-
-socket.on("init", (data) => {
-  myId = data.id;
-  Object.keys(players).forEach(id => delete players[id]);
-  Object.assign(players, data.players);
-  enemies = data.enemies || [];
-});
-
-socket.on("players", (serverPlayers) => {
-  Object.assign(players, serverPlayers);
-});
-
-socket.on("playerMove", (data) => {
-  if (!players[data.id]) return;
-  players[data.id].x = data.x;
-  players[data.id].y = data.y;
-});
-
-socket.on("bullet", (bullet) => {
-  bullets.push(bullet);
-});
-
-socket.on("sync", (data) => {
-  enemies = data.enemies || [];
-  bullets = data.bullets || [];
-  if (typeof data.wave === "number") wave = data.wave;
-});
-
-socket.on("removePlayer", (id) => {
-  delete players[id];
-});
-
-// ======================
-// COLOR PICKER
-// ======================
-
-if (colorPicker) {
-  colorPicker.addEventListener("input", () => {
-    myColor = colorPicker.value;
-    socket.emit("setColor", myColor);
-  });
+// Gun overlay scene so the weapon never clips into terrain
+const gunScene = new THREE.Scene();
+const gunCamera = new THREE.PerspectiveCamera(60, innerWidth/innerHeight, 0.01, 10);
+gunScene.add(new THREE.HemisphereLight(0xffffff, 0x333333, 1.1));
+let gun;
+{
+  gun = new THREE.Group();
+  const body = new THREE.Mesh(new THREE.BoxGeometry(0.14,0.14,0.7), new THREE.MeshLambertMaterial({color:0x333333,flatShading:true}));
+  const barrel = new THREE.Mesh(new THREE.BoxGeometry(0.06,0.06,0.4), new THREE.MeshLambertMaterial({color:0x111111,flatShading:true})); barrel.position.set(0,0.02,-0.5);
+  const grip = new THREE.Mesh(new THREE.BoxGeometry(0.1,0.22,0.12), new THREE.MeshLambertMaterial({color:0x552200,flatShading:true})); grip.position.set(0,-0.16,0.2);
+  gun.add(body, barrel, grip);
+  gun.position.set(0.28, -0.28, -0.7);
+  gunScene.add(gun);
 }
 
-// ======================
-// INPUT
-// ======================
-
-window.addEventListener("keydown", (e) => {
-  keys[e.key.toLowerCase()] = true;
-});
-
-window.addEventListener("keyup", (e) => {
-  keys[e.key.toLowerCase()] = false;
-});
-
-window.addEventListener("mousedown", (e) => {
-  if (!players[myId]) return;
-  const player = players[myId];
-  const dx = e.clientX - player.x;
-  const dy = e.clientY - player.y;
-  const length = Math.hypot(dx, dy);
-  if (length === 0) return;
-  socket.emit("shoot", {
-    x: player.x,
-    y: player.y,
-    dx: (dx / length) * 12,
-    dy: (dy / length) * 12
-  });
-});
-
-// Mobile joystick
-if (joystick) {
-  joystick.addEventListener("touchmove", (e) => {
-    e.preventDefault();
-    const touch = e.touches[0];
-    const rect = joystick.getBoundingClientRect();
-    const x = touch.clientX - (rect.left + rect.width / 2);
-    const y = touch.clientY - (rect.top + rect.height / 2);
-    joyX = Math.max(-1, Math.min(1, x / 40));
-    joyY = Math.max(-1, Math.min(1, y / 40));
-  });
-
-  joystick.addEventListener("touchend", () => {
-    joyX = 0;
-    joyY = 0;
-  });
+// ---------- 2) TERRAIN (same noise as server so worlds match) ----------
+function hash(x,z){ let n=Math.sin((x+SEED)*127.1+(z+SEED)*311.7)*43758.5453; return n-Math.floor(n); }
+function smoothNoise(x,z){
+  const xi=Math.floor(x), zi=Math.floor(z), xf=x-xi, zf=z-zi;
+  const tl=hash(xi,zi), tr=hash(xi+1,zi), bl=hash(xi,zi+1), br=hash(xi+1,zi+1);
+  const u=xf*xf*(3-2*xf), v=zf*zf*(3-2*zf);
+  const t=tl+(tr-tl)*u, b=bl+(br-bl)*u; return t+(b-t)*v;
 }
-
-if (shootBtn) {
-  shootBtn.addEventListener("touchstart", () => {
-    if (!players[myId]) return;
-    socket.emit("shoot", {
-      x: players[myId].x,
-      y: players[myId].y,
-      dx: 12,
-      dy: 0
-    });
-  });
+function terrainHeight(x,z){
+  let h = smoothNoise(x*0.12,z*0.12)*0.6 + smoothNoise(x*0.25,z*0.25)*0.3 + smoothNoise(x*0.5,z*0.5)*0.1;
+  return Math.floor(h*MAX_H)+1;
 }
-
-// ======================
-// UPDATE
-// ======================
-
-function update() {
-  if (!players[myId]) return;
-  const player = players[myId];
-
-  player.x += joyX * 5;
-  player.y += joyY * 5;
-
-  if (keys["w"]) player.y -= 5;
-  if (keys["s"]) player.y += 5;
-  if (keys["a"]) player.x -= 5;
-  if (keys["d"]) player.x += 5;
-
-  player.x = Math.max(0, Math.min(canvas.width - player.size, player.x));
-  player.y = Math.max(0, Math.min(canvas.height - player.size, player.y));
-
-  socket.emit("move", { x: player.x, y: player.y });
+function groundHeightAt(wx,wz){
+  const gx=Math.round(wx), gz=Math.round(wz);
+  if(gx<0||gz<0||gx>=WORLD||gz>=WORLD) return 0;
+  return heightMap[gx][gz]+0.5;
 }
-
-// ======================
-// DRAW
-// ======================
-
-function drawPlayer(id) {
-  const p = players[id];
-  if (!p) return;
-
-  ctx.fillStyle = p.color || "dodgerblue";
-  ctx.fillRect(p.x, p.y, p.size, p.size);
-
-  // Highlight your own player so you can always find yourself
-  if (id === myId) {
-    ctx.strokeStyle = "yellow";
-    ctx.lineWidth = 3;
-    ctx.strokeRect(p.x - 2, p.y - 2, p.size + 4, p.size + 4);
+const cubeGeo = new THREE.BoxGeometry(1,1,1);
+const matGrass = new THREE.MeshLambertMaterial({color:0x5fa832,flatShading:true});
+const matDirt  = new THREE.MeshLambertMaterial({color:0x8a5a2b,flatShading:true});
+const matStone = new THREE.MeshLambertMaterial({color:0x808080,flatShading:true});
+function buildTerrain(){
+  const pos={grass:[],dirt:[],stone:[]};
+  for(let x=0;x<WORLD;x++){ heightMap[x]=[];
+    for(let z=0;z<WORLD;z++){
+      const h=terrainHeight(x,z); heightMap[x][z]=h;
+      for(let y=h;y>h-3&&y>=0;y--){ if(y===h)pos.grass.push([x,y,z]); else if(y>h-2)pos.dirt.push([x,y,z]); else pos.stone.push([x,y,z]); }
+    }
   }
-
-  ctx.fillStyle = "black";
-  ctx.font = "14px Arial";
-  ctx.textAlign = "center";
-  ctx.fillText(p.name || "Player", p.x + p.size / 2, p.y - 10);
+  const d=new THREE.Object3D();
+  const make=(list,mat)=>{ const m=new THREE.InstancedMesh(cubeGeo,mat,list.length);
+    list.forEach((p,i)=>{ d.position.set(p[0],p[1],p[2]); d.updateMatrix(); m.setMatrixAt(i,d.matrix); });
+    m.instanceMatrix.needsUpdate=true; scene.add(m); };
+  make(pos.grass,matGrass); make(pos.dirt,matDirt); make(pos.stone,matStone);
 }
 
-function draw() {
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
+// ---------- 3) LOCAL PLAYER + CONTROLS (client prediction) ----------
+const me = { x:25, y:0, z:25, yaw:0, pitch:0, vy:0, onGround:false, height:1.7, alive:true };
+const keys = {}; const SPEED=6, JUMP=8, GRAVITY=22;
+addEventListener('keydown', e=>{ keys[e.code]=true; if(e.code==='KeyR') reload(); });
+addEventListener('keyup',   e=>{ keys[e.code]=false; });
+document.addEventListener('mousemove', e=>{
+  if(document.pointerLockElement!==canvas) return;
+  me.yaw   -= e.movementX*0.0022;
+  me.pitch -= e.movementY*0.0022;
+  me.pitch  = Math.max(-Math.PI/2+0.05, Math.min(Math.PI/2-0.05, me.pitch));
+});
 
-  // Enemies + HP bars
-  enemies.forEach(enemy => {
-    ctx.fillStyle = "purple";
-    ctx.fillRect(enemy.x, enemy.y, enemy.size, enemy.size);
+function updatePlayer(dt){
+  if(!me.alive) return; // frozen while dead (server respawns us)
+  const fwd  = new THREE.Vector3(-Math.sin(me.yaw),0,-Math.cos(me.yaw));
+  const right= new THREE.Vector3( Math.cos(me.yaw),0,-Math.sin(me.yaw));
+  const mv = new THREE.Vector3();
+  if(keys['KeyW']) mv.add(fwd); if(keys['KeyS']) mv.sub(fwd);
+  if(keys['KeyD']) mv.add(right); if(keys['KeyA']) mv.sub(right);
+  if(mv.lengthSq()>0) mv.normalize().multiplyScalar(SPEED);
 
-    ctx.fillStyle = "red";
-    ctx.fillRect(enemy.x, enemy.y - 8, enemy.size, 5);
-    ctx.fillStyle = "lime";
-    ctx.fillRect(enemy.x, enemy.y - 8, (enemy.hp / 50) * enemy.size, 5);
-  });
+  const nx=me.x+mv.x*dt, nz=me.z+mv.z*dt;
+  if(groundHeightAt(nx,me.z) <= me.y+1.1) me.x=nx;
+  if(groundHeightAt(me.x,nz) <= me.y+1.1) me.z=nz;
 
-  // Bullets
-  bullets.forEach(bullet => {
-    ctx.fillStyle = "red";
-    ctx.beginPath();
-    ctx.arc(bullet.x, bullet.y, 4, 0, Math.PI * 2);
-    ctx.fill();
-  });
+  if(keys['Space'] && me.onGround){ me.vy=JUMP; me.onGround=false; }
+  me.vy -= GRAVITY*dt;
+  me.y += me.vy*dt;
+  const g = groundHeightAt(me.x,me.z);
+  if(me.y<=g){ me.y=g; me.vy=0; me.onGround=true; } else me.onGround=false;
+  me.x=Math.max(0.5,Math.min(WORLD-1.5,me.x));
+  me.z=Math.max(0.5,Math.min(WORLD-1.5,me.z));
 
-  // Other players first, then yourself on top
-  Object.keys(players).forEach(id => {
-    if (id !== myId) drawPlayer(id);
-  });
-  drawPlayer(myId);
+  camera.position.set(me.x, me.y+me.height, me.z);
+  camera.rotation.order='YXZ';
+  camera.rotation.set(me.pitch, me.yaw, 0);
 
-  // HUD
-  ctx.fillStyle = "black";
-  ctx.textAlign = "left";
-  ctx.font = "20px Arial";
-  ctx.fillText("Wave: " + wave, 20, 30);
-  ctx.fillText("Enemies: " + enemies.length, 20, 60);
-  ctx.fillText("Players: " + Object.keys(players).length, 20, 90);
+  socket.emit('move', { x:me.x, y:me.y, z:me.z, yaw:me.yaw });
 }
 
-// ======================
-// LOOP
-// ======================
-
-function loop() {
-  update();
-  draw();
-  requestAnimationFrame(loop);
+// ---------- 4) SHOOTING (send intent; recoil/ammo are local feel) ----------
+const MAG=30, RELOAD=1.3; let ammo=MAG, reloading=false, recoil=0;
+canvas.addEventListener('mousedown', e=>{ if(e.button===0) shoot(); });
+function shoot(){
+  if(!running || !me.alive || reloading || ammo<=0){ if(ammo<=0) reload(); return; }
+  ammo--; recoil=0.14; updateAmmo();
+  const dir=camera.getWorldDirection(new THREE.Vector3());
+  socket.emit('shoot',{ x:camera.position.x, y:camera.position.y, z:camera.position.z, dx:dir.x, dy:dir.y, dz:dir.z });
 }
-
-loop();
+function reload(){
+  if(!running||reloading||ammo===MAG) return; reloading=true;
+  document.getElementById('ammoText').innerHTML = MAG+' / '+MAG+'<span class="reload">RELOADING…</span>';
+  setTimeout(()=>{ ammo=MAG; reloading=false; updateAmmo(); }, RELOAD*1000);
+}
+function updateAmmo(){

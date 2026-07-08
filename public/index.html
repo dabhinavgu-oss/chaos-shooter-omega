@@ -3,490 +3,154 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Voxel Strike — Blocky FPS</title>
+<title>Chaos Shooter Omega — 3D Voxel Multiplayer</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   html, body { width: 100%; height: 100%; overflow: hidden; background: #000; font-family: 'Courier New', monospace; }
   canvas { display: block; }
-
-  /* ---------- HUD ---------- */
-  #hud { position: fixed; inset: 0; pointer-events: none; color: #fff; text-shadow: 2px 2px 0 #000; }
-
-  /* Crosshair in the exact center of the screen */
-  #crosshair {
-    position: fixed; left: 50%; top: 50%; width: 22px; height: 22px;
-    transform: translate(-50%, -50%); pointer-events: none;
-  }
-  #crosshair::before, #crosshair::after {
-    content: ""; position: absolute; background: #fff; box-shadow: 0 0 2px #000;
-  }
-  #crosshair::before { left: 50%; top: 0; width: 2px; height: 100%; transform: translateX(-50%); }
-  #crosshair::after  { top: 50%; left: 0; height: 2px; width: 100%; transform: translateY(-50%); }
-
-  /* Health bar bottom-left */
+  #hud { position: fixed; inset: 0; pointer-events: none; color: #fff; text-shadow: 2px 2px 0 #000; display: none; }
+  #crosshair { position: fixed; left: 50%; top: 50%; width: 22px; height: 22px; transform: translate(-50%,-50%); }
+  #crosshair::before, #crosshair::after { content:""; position:absolute; background:#fff; box-shadow:0 0 2px #000; }
+  #crosshair::before { left:50%; top:0; width:2px; height:100%; transform:translateX(-50%); }
+  #crosshair::after  { top:50%; left:0; height:2px; width:100%; transform:translateY(-50%); }
   #healthWrap { position: fixed; left: 20px; bottom: 20px; width: 260px; }
-  #healthLabel { font-size: 14px; margin-bottom: 4px; letter-spacing: 2px; }
+  #healthLabel { font-size: 13px; margin-bottom: 4px; letter-spacing: 2px; }
   #healthBarBg { width: 100%; height: 22px; background: #400; border: 3px solid #000; }
-  #healthBar { height: 100%; width: 100%; background: linear-gradient(90deg,#3f0,#0a0); transition: width .15s; }
-
-  /* Ammo bottom-right */
-  #ammo { position: fixed; right: 24px; bottom: 24px; font-size: 30px; font-weight: bold; letter-spacing: 2px; }
-  #ammo .reload { color: #ff5; font-size: 18px; display: block; text-align: right; }
-
-  /* Score + wave top-left */
-  #topInfo { position: fixed; left: 20px; top: 16px; font-size: 20px; line-height: 1.5; }
-
-  /* Damage flash overlay */
+  #healthBar { height: 100%; width: 100%; background: linear-gradient(90deg,#3f0,#0a0); transition: width .12s; }
+  #ammo { position: fixed; right: 24px; bottom: 24px; font-size: 28px; font-weight: bold; }
+  #ammo .reload { color:#ff5; font-size:16px; display:block; text-align:right; }
+  #topInfo { position: fixed; left: 20px; top: 16px; font-size: 18px; line-height: 1.5; }
+  #killfeed { position: fixed; right: 20px; top: 16px; font-size: 14px; text-align: right; line-height: 1.6; }
   #damageFlash { position: fixed; inset: 0; background: rgba(255,0,0,0); pointer-events: none; transition: background .1s; }
-
-  /* ---------- Screens ---------- */
-  .screen {
-    position: fixed; inset: 0; display: flex; flex-direction: column;
-    align-items: center; justify-content: center; text-align: center;
-    color: #fff; background: rgba(0,0,0,.82); z-index: 10;
-  }
-  .screen h1 { font-size: 60px; letter-spacing: 6px; margin-bottom: 10px; color: #8f8; text-shadow: 4px 4px 0 #000; }
-  .screen h2 { font-size: 40px; color: #f66; margin-bottom: 16px; }
-  .screen p  { font-size: 18px; max-width: 560px; line-height: 1.7; margin-bottom: 24px; }
-  .btn {
-    pointer-events: auto; cursor: pointer; font-family: inherit; font-size: 22px;
-    padding: 14px 34px; background: #2a2; color: #fff; border: 4px solid #000;
-    letter-spacing: 3px; text-transform: uppercase; box-shadow: 4px 4px 0 #000;
-  }
-  .btn:hover { background: #3c3; }
-  #hud, #damageFlash { display: none; }
+  .screen { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; color:#fff; background: rgba(0,0,0,.85); z-index: 10; }
+  .screen h1 { font-size: 54px; letter-spacing: 5px; margin-bottom: 8px; color:#8f8; text-shadow: 4px 4px 0 #000; }
+  .screen p  { font-size: 16px; max-width: 560px; line-height: 1.7; margin-bottom: 20px; }
+  .screen input { font-family: inherit; font-size: 18px; padding: 8px 12px; margin: 6px; border: 3px solid #000; }
+  .btn { pointer-events:auto; cursor:pointer; font-family:inherit; font-size:22px; padding:14px 34px; background:#2a2; color:#fff; border:4px solid #000; letter-spacing:3px; text-transform:uppercase; box-shadow:4px 4px 0 #000; }
+  .btn:hover { background:#3c3; }
   .key { display:inline-block; background:#333; border:2px solid #000; padding:0 8px; border-radius:4px; }
+  #deadOverlay { position: fixed; inset: 0; display:none; align-items:center; justify-content:center; color:#f66; font-size:40px; text-shadow:3px 3px 0 #000; pointer-events:none; z-index: 5; }
 </style>
 </head>
 <body>
-  <!-- ============ HUD ============ -->
   <div id="hud">
     <div id="crosshair"></div>
-    <div id="topInfo">
-      SCORE: <span id="score">0</span><br />
-      WAVE: <span id="wave">1</span><br />
-      ENEMIES: <span id="enemyCount">0</span>
-    </div>
-    <div id="healthWrap">
-      <div id="healthLabel">HEALTH</div>
-      <div id="healthBarBg"><div id="healthBar"></div></div>
-    </div>
+    <div id="topInfo">SCORE: <span id="score">0</span><br/>WAVE: <span id="wave">1</span><br/>PLAYERS: <span id="pcount">1</span></div>
+    <div id="killfeed"></div>
+    <div id="healthWrap"><div id="healthLabel">HEALTH</div><div id="healthBarBg"><div id="healthBar"></div></div></div>
     <div id="ammo"><span id="ammoText">30 / 30</span></div>
   </div>
   <div id="damageFlash"></div>
+  <div id="deadOverlay">YOU DIED — RESPAWNING…</div>
 
-  <!-- ============ Start screen ============ -->
   <div id="startScreen" class="screen">
-    <h1>VOXEL STRIKE</h1>
-    <p>Survive the zombie waves in a blocky world.<br />
-       <span class="key">WASD</span> move &nbsp; <span class="key">SPACE</span> jump &nbsp;
-       <span class="key">MOUSE</span> look &nbsp; <span class="key">L-CLICK</span> shoot &nbsp;
-       <span class="key">R</span> reload</p>
+    <h1>CHAOS SHOOTER OMEGA</h1>
+    <p>3D voxel multiplayer — fight the zombie waves together, or shoot each other.<br/>
+       <span class="key">WASD</span> move &nbsp;<span class="key">SPACE</span> jump &nbsp;<span class="key">MOUSE</span> look &nbsp;<span class="key">CLICK</span> shoot &nbsp;<span class="key">R</span> reload</p>
+    <div>
+      <input id="nameInput" placeholder="Your name" maxlength="16" value="Player" />
+      <input id="colorInput" type="color" value="#1e90ff" />
+    </div>
     <button id="playBtn" class="btn">Click to Play</button>
   </div>
 
-  <!-- ============ Game over screen ============ -->
-  <div id="gameOverScreen" class="screen" style="display:none">
-    <h2>GAME OVER</h2>
-    <p>Final Score: <span id="finalScore">0</span><br />Wave Reached: <span id="finalWave">1</span></p>
-    <button id="restartBtn" class="btn">Restart</button>
-  </div>
-
-  <!-- Three.js from CDN -->
   <script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
+  <script src="/socket.io/socket.io.js"></script>
   <script>
   /* =====================================================================
-     VOXEL STRIKE — a self-contained blocky FPS built on Three.js
-     Sections:  1) Setup   2) Terrain gen   3) Player controls
-                4) Shooting   5) Enemies + AI   6) Game loop / UI
+     CLIENT: renders the authoritative server state in 3D.
+     - builds terrain from the server's seed (identical world for everyone)
+     - sends local movement + shots as INTENT; server decides outcomes
+     - renders other players as colored blocky avatars + shared enemies
      ===================================================================== */
 
-  // ---------------------------------------------------------------------
-  // 1) CORE SETUP: scene, camera, renderer, lights, sky gradient
-  // ---------------------------------------------------------------------
+  const socket = io();
+  let myId = null, running = false;
+  let SEED = 0, WORLD = 50, MAX_H = 8;
+  const heightMap = [];
+
+  // ---- Three.js core ----
   const scene = new THREE.Scene();
-
-  // Simple gradient "sky": a big inverted sphere with a vertex-colored shader-ish material.
-  // We fake a gradient using scene.background + fog for depth.
-  scene.background = new THREE.Color(0x87ceeb);            // sky blue
-  scene.fog = new THREE.Fog(0x87ceeb, 35, 90);            // distance fog = performance + mood
-
-  const camera = new THREE.PerspectiveCamera(75, innerWidth / innerHeight, 0.1, 500);
-
-  const renderer = new THREE.WebGLRenderer({ antialias: false }); // AA off for the crisp blocky look
+  scene.background = new THREE.Color(0x87ceeb);
+  scene.fog = new THREE.Fog(0x87ceeb, 35, 90);
+  const camera = new THREE.PerspectiveCamera(75, innerWidth/innerHeight, 0.1, 500);
+  const renderer = new THREE.WebGLRenderer({ antialias: false });
   renderer.setSize(innerWidth, innerHeight);
-  renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));       // cap DPR for 60fps
+  renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));
   document.body.appendChild(renderer.domElement);
-
-  // Flat-shaded look: a hemisphere + directional light, no fancy shadows (perf).
+  renderer.autoClear = false;
   scene.add(new THREE.HemisphereLight(0xffffff, 0x444444, 0.9));
-  const sun = new THREE.DirectionalLight(0xffffff, 0.7);
-  sun.position.set(30, 60, 20);
-  scene.add(sun);
+  const sun = new THREE.DirectionalLight(0xffffff, 0.7); sun.position.set(30,60,20); scene.add(sun);
 
-  // A separate scene camera for the gun so it never clips into walls (rendered on top).
+  // gun overlay scene (bottom-right, never clips walls)
   const gunScene = new THREE.Scene();
-  const gunCamera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.01, 10);
-  renderer.autoClear = false; // we manually clear so we can draw gun over the world
-
-  // ---------------------------------------------------------------------
-  // 2) PROCEDURAL VOXEL TERRAIN
-  //    - value-noise height map (no external libs)
-  //    - grass top / dirt sides / stone deep, flat-shaded cubes
-  //    - heights stored in a 2D array for O(1) collision lookups
-  // ---------------------------------------------------------------------
-  const WORLD = 50;          // 50 x 50 blocks
-  const MAX_H = 8;           // max terrain height in blocks
-  const heightMap = [];      // heightMap[x][z] = top block y-index
-
-  // Deterministic pseudo-random hash for a grid point -> [0,1)
-  function hash(x, z) {
-    let n = Math.sin(x * 127.1 + z * 311.7) * 43758.5453;
-    return n - Math.floor(n);
-  }
-  // Smooth value noise: bilinear interpolation between hashed grid corners
-  function smoothNoise(x, z) {
-    const xi = Math.floor(x), zi = Math.floor(z);
-    const xf = x - xi, zf = z - zi;
-    const tl = hash(xi, zi),   tr = hash(xi + 1, zi);
-    const bl = hash(xi, zi+1), br = hash(xi + 1, zi + 1);
-    const u = xf * xf * (3 - 2 * xf); // smoothstep
-    const v = zf * zf * (3 - 2 * zf);
-    const top = tl + (tr - tl) * u;
-    const bot = bl + (br - bl) * u;
-    return top + (bot - top) * v;
-  }
-  // Fractal noise (a couple of octaves) for more natural rolling hills
-  function terrainHeight(x, z) {
-    let h = smoothNoise(x * 0.12, z * 0.12) * 0.6
-          + smoothNoise(x * 0.25, z * 0.25) * 0.3
-          + smoothNoise(x * 0.5,  z * 0.5)  * 0.1;
-    return Math.floor(h * MAX_H) + 1; // at least 1 block tall
+  const gunCamera = new THREE.PerspectiveCamera(60, innerWidth/innerHeight, 0.01, 10);
+  gunScene.add(new THREE.HemisphereLight(0xffffff, 0x333333, 1.1));
+  let gun; { gun = new THREE.Group();
+    const body = new THREE.Mesh(new THREE.BoxGeometry(0.14,0.14,0.7), new THREE.MeshLambertMaterial({color:0x333,flatShading:true}));
+    const barrel = new THREE.Mesh(new THREE.BoxGeometry(0.06,0.06,0.4), new THREE.MeshLambertMaterial({color:0x111,flatShading:true})); barrel.position.set(0,0.02,-0.5);
+    const grip = new THREE.Mesh(new THREE.BoxGeometry(0.1,0.22,0.12), new THREE.MeshLambertMaterial({color:0x552200,flatShading:true})); grip.position.set(0,-0.16,0.2);
+    gun.add(body,barrel,grip); gun.position.set(0.28,-0.28,-0.7); gunScene.add(gun);
   }
 
-  // Build materials once and reuse (huge perf win). Flat colors = voxel style.
-  const matGrass = new THREE.MeshLambertMaterial({ color: 0x5fa832, flatShading: true }); // grass top
-  const matDirt  = new THREE.MeshLambertMaterial({ color: 0x8a5a2b, flatShading: true }); // dirt
-  const matStone = new THREE.MeshLambertMaterial({ color: 0x808080, flatShading: true }); // stone
-  const cubeGeo  = new THREE.BoxGeometry(1, 1, 1);
+  // ---- Terrain rebuild from server seed (same noise as server.js) ----
+  function hash(x,z){let n=Math.sin((x+SEED)*127.1+(z+SEED)*311.7)*43758.5453;return n-Math.floor(n);}
+  function smoothNoise(x,z){const xi=Math.floor(x),zi=Math.floor(z),xf=x-xi,zf=z-zi;
+    const tl=hash(xi,zi),tr=hash(xi+1,zi),bl=hash(xi,zi+1),br=hash(xi+1,zi+1);
+    const u=xf*xf*(3-2*xf),v=zf*zf*(3-2*zf);const t=tl+(tr-tl)*u,b=bl+(br-bl)*u;return t+(b-t)*v;}
+  function terrainHeight(x,z){let h=smoothNoise(x*0.12,z*0.12)*0.6+smoothNoise(x*0.25,z*0.25)*0.3+smoothNoise(x*0.5,z*0.5)*0.1;return Math.floor(h*MAX_H)+1;}
+  function groundHeightAt(wx,wz){const gx=Math.round(wx),gz=Math.round(wz);if(gx<0||gz<0||gx>=WORLD||gz>=WORLD)return 0;return heightMap[gx][gz]+0.5;}
 
-  // InstancedMesh is the key to 60fps with thousands of blocks:
-  // one draw call per material instead of one mesh per cube.
-  function buildTerrain() {
-    // First pass: compute height map + count how many cubes of each type we need.
-    const positions = { grass: [], dirt: [], stone: [] };
-    for (let x = 0; x < WORLD; x++) {
-      heightMap[x] = [];
-      for (let z = 0; z < WORLD; z++) {
-        const h = terrainHeight(x, z);
-        heightMap[x][z] = h;
-        // Only render a few layers below the surface (hidden blocks are wasted draws).
-        for (let y = h; y > h - 3 && y >= 0; y--) {
-          if (y === h)                positions.grass.push([x, y, z]);
-          else if (y > h - 2)         positions.dirt.push([x, y, z]);
-          else                        positions.stone.push([x, y, z]);
-        }
-      }
-    }
-    const dummy = new THREE.Object3D();
-    const make = (list, mat) => {
-      const inst = new THREE.InstancedMesh(cubeGeo, mat, list.length);
-      list.forEach((p, i) => {
-        dummy.position.set(p[0], p[1], p[2]);
-        dummy.updateMatrix();
-        inst.setMatrixAt(i, dummy.matrix);
-      });
-      inst.instanceMatrix.needsUpdate = true;
-      scene.add(inst);
-    };
-    make(positions.grass, matGrass);
-    make(positions.dirt,  matDirt);
-    make(positions.stone, matStone);
+  const cubeGeo = new THREE.BoxGeometry(1,1,1);
+  const matGrass = new THREE.MeshLambertMaterial({color:0x5fa832,flatShading:true});
+  const matDirt  = new THREE.MeshLambertMaterial({color:0x8a5a2b,flatShading:true});
+  const matStone = new THREE.MeshLambertMaterial({color:0x808080,flatShading:true});
+  function buildTerrain(){
+    const pos={grass:[],dirt:[],stone:[]};
+    for(let x=0;x<WORLD;x++){heightMap[x]=[];for(let z=0;z<WORLD;z++){
+      const h=terrainHeight(x,z);heightMap[x][z]=h;
+      for(let y=h;y>h-3&&y>=0;y--){ if(y===h)pos.grass.push([x,y,z]); else if(y>h-2)pos.dirt.push([x,y,z]); else pos.stone.push([x,y,z]); }
+    }}
+    const d=new THREE.Object3D();
+    const make=(list,mat)=>{const m=new THREE.InstancedMesh(cubeGeo,mat,list.length);
+      list.forEach((p,i)=>{d.position.set(p[0],p[1],p[2]);d.updateMatrix();m.setMatrixAt(i,d.matrix);});
+      m.instanceMatrix.needsUpdate=true;scene.add(m);};
+    make(pos.grass,matGrass);make(pos.dirt,matDirt);make(pos.stone,matStone);
   }
 
-  // Returns the ground surface Y (world units) at a given world x,z. Used for collision.
-  function groundHeightAt(wx, wz) {
-    const gx = Math.round(wx), gz = Math.round(wz);
-    if (gx < 0 || gz < 0 || gx >= WORLD || gz >= WORLD) return 0; // outside map = sea level
-    // top block center is at heightMap[gx][gz]; its top face is +0.5
-    return heightMap[gx][gz] + 0.5;
-  }
-
-  // ---------------------------------------------------------------------
-  // 3) PLAYER CONTROLS: pointer lock mouse-look, WASD, gravity, jump, AABB collision
-  // ---------------------------------------------------------------------
-  const player = {
-    pos: new THREE.Vector3(WORLD / 2, 0, WORLD / 2),
-    vel: new THREE.Vector3(),
-    yaw: 0, pitch: 0,
-    height: 1.7,        // eye height above feet
-    onGround: false,
-    hp: 100,
-  };
-  const keys = {};
-  const SPEED = 6, JUMP = 8, GRAVITY = 22;
-
-  addEventListener('keydown', e => { keys[e.code] = true; if (e.code === 'KeyR') reload(); });
-  addEventListener('keyup',   e => { keys[e.code] = false; });
-
-  // Pointer lock for mouse-look
+  // ---- Local player prediction (server validates) ----
+  const me = { x:25, y:0, z:25, yaw:0, pitch:0, vy:0, onGround:false, height:1.7 };
+  const keys = {}; const SPEED=6, JUMP=8, GRAVITY=22;
+  addEventListener('keydown',e=>{keys[e.code]=true; if(e.code==='KeyR') reload();});
+  addEventListener('keyup',e=>{keys[e.code]=false;});
   const canvas = renderer.domElement;
-  function requestLock() { canvas.requestPointerLock(); }
-  document.addEventListener('mousemove', e => {
-    if (document.pointerLockElement !== canvas) return;
-    player.yaw   -= e.movementX * 0.0022;
-    player.pitch -= e.movementY * 0.0022;
-    // clamp so you can't flip over
-    player.pitch = Math.max(-Math.PI / 2 + 0.05, Math.min(Math.PI / 2 - 0.05, player.pitch));
-  });
+  document.addEventListener('mousemove',e=>{ if(document.pointerLockElement!==canvas) return;
+    me.yaw -= e.movementX*0.0022; me.pitch -= e.movementY*0.0022;
+    me.pitch = Math.max(-Math.PI/2+0.05, Math.min(Math.PI/2-0.05, me.pitch)); });
 
-  // Update player physics + collision each frame
-  function updatePlayer(dt) {
-    // Build a movement vector from WASD relative to where we're facing (yaw only)
-    const forward = new THREE.Vector3(-Math.sin(player.yaw), 0, -Math.cos(player.yaw));
-    const right   = new THREE.Vector3( Math.cos(player.yaw), 0, -Math.sin(player.yaw));
-    const move = new THREE.Vector3();
-    if (keys['KeyW']) move.add(forward);
-    if (keys['KeyS']) move.sub(forward);
-    if (keys['KeyD']) move.add(right);
-    if (keys['KeyA']) move.sub(right);
-    if (move.lengthSq() > 0) move.normalize().multiplyScalar(SPEED);
-
-    player.vel.x = move.x;
-    player.vel.z = move.z;
-
-    // Jump only when grounded
-    if (keys['Space'] && player.onGround) { player.vel.y = JUMP; player.onGround = false; }
-
-    // Gravity
-    player.vel.y -= GRAVITY * dt;
-
-    // --- Horizontal move + simple wall collision (step-up on steep height diffs) ---
-    const nextX = player.pos.x + player.vel.x * dt;
-    const nextZ = player.pos.z + player.vel.z * dt;
-    // Block movement into terrain that is much higher than our feet (walls),
-    // otherwise let us walk up gentle slopes.
-    if (groundHeightAt(nextX, player.pos.z) <= player.pos.y + 1.1) player.pos.x = nextX;
-    if (groundHeightAt(player.pos.x, nextZ) <= player.pos.y + 1.1) player.pos.z = nextZ;
-
-    // --- Vertical move + ground collision ---
-    player.pos.y += player.vel.y * dt;
-    const ground = groundHeightAt(player.pos.x, player.pos.z);
-    if (player.pos.y <= ground) {          // landed / standing on a block
-      player.pos.y = ground;
-      player.vel.y = 0;
-      player.onGround = true;
-    } else {
-      player.onGround = false;
-    }
-    // Keep the player inside the map bounds
-    player.pos.x = Math.max(0.5, Math.min(WORLD - 1.5, player.pos.x));
-    player.pos.z = Math.max(0.5, Math.min(WORLD - 1.5, player.pos.z));
-
-    // Place the camera at eye height and apply look rotation
-    camera.position.set(player.pos.x, player.pos.y + player.height, player.pos.z);
-    camera.rotation.set(0, 0, 0, 'YXZ');
-    camera.rotation.order = 'YXZ';
-    camera.rotation.y = player.yaw;
-    camera.rotation.x = player.pitch;
+  // ---- Shooting (client sends intent; recoil + ammo are local feel) ----
+  const MAG=30, RELOAD=1.3; let ammo=MAG, reloading=false, recoil=0;
+  canvas.addEventListener('mousedown',e=>{ if(e.button===0) shoot(); });
+  function shoot(){
+    if(!running || reloading || ammo<=0){ if(ammo<=0) reload(); return; }
+    ammo--; recoil=0.14; updateAmmo();
+    const dir=camera.getWorldDirection(new THREE.Vector3());
+    socket.emit('shoot',{ x:camera.position.x,y:camera.position.y,z:camera.position.z, dx:dir.x,dy:dir.y,dz:dir.z });
   }
+  function reload(){ if(!running||reloading||ammo===MAG) return; reloading=true;
+    document.getElementById('ammoText').innerHTML = MAG+' / '+MAG+'<span class="reload">RELOADING…</span>';
+    setTimeout(()=>{ammo=MAG;reloading=false;updateAmmo();},RELOAD*1000); }
+  function updateAmmo(){ if(!reloading) document.getElementById('ammoText').textContent = ammo+' / '+MAG; }
 
-  // ---------------------------------------------------------------------
-  // 4) SHOOTING: raycast hitscan, tracer particle, recoil, ammo + reload
-  // ---------------------------------------------------------------------
-  const MAG_SIZE = 30, RELOAD_TIME = 1.3;
-  let ammo = MAG_SIZE, reloading = false, recoil = 0;
-  const raycaster = new THREE.Raycaster();
-  const tracers = []; // active tracer effects {mesh, life}
+  // ---- Tracers (fired by anyone, broadcast by server) ----
+  const tracers=[];
+  function spawnTracer(o,dir){ const to=new THREE.Vector3(o.x+dir.x*80,o.y+dir.y*80,o.z+dir.z*80);
+    const g=new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(o.x,o.y,o.z),to]);
+    const m=new THREE.LineBasicMaterial({color:0xffee44,transparent:true,opacity:1});
+    const l=new THREE.Line(g,m);scene.add(l);tracers.push({mesh:l,life:0.08}); }
 
-  // Build the blocky gun model in its own overlay scene (bottom-right).
-  let gun;
-  function buildGun() {
-    gun = new THREE.Group();
-    const body = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.14, 0.7),
-                                new THREE.MeshLambertMaterial({ color: 0x333333, flatShading: true }));
-    const barrel = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.06, 0.4),
-                                new THREE.MeshLambertMaterial({ color: 0x111111, flatShading: true }));
-    barrel.position.set(0, 0.02, -0.5);
-    const grip = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.22, 0.12),
-                                new THREE.MeshLambertMaterial({ color: 0x552200, flatShading: true }));
-    grip.position.set(0, -0.16, 0.2);
-    gun.add(body, barrel, grip);
-    // Position gun in front-bottom-right of the gun camera
-    gun.position.set(0.28, -0.28, -0.7);
-    gunScene.add(gun);
-    gunScene.add(new THREE.HemisphereLight(0xffffff, 0x333333, 1.1));
-  }
+  // ---- Remote entities ----
+  const otherPlayers={}; // id -> group
+  const enemyMeshes={};  // id -> group
 
-  function shoot() {
-    if (reloading || ammo <= 0 || !running) { if (ammo <= 0) reload(); return; }
-    ammo--;
-    recoil = 0.14;                 // kick the gun back; eased out each frame
-    updateAmmoUI();
-
-    // Raycast straight out of the camera center (the crosshair)
-    raycaster.set(camera.position, camera.getWorldDirection(new THREE.Vector3()));
-    const hits = raycaster.intersectObjects(enemies.map(e => e.mesh), true);
-
-    let endPoint;
-    if (hits.length > 0) {
-      endPoint = hits[0].point;
-      // Walk up to the enemy group to apply damage
-      let obj = hits[0].object;
-      while (obj && !obj.userData.enemyRef) obj = obj.parent;
-      if (obj && obj.userData.enemyRef) damageEnemy(obj.userData.enemyRef);
-    } else {
-      // No hit: draw tracer to a far point along the ray
-      endPoint = camera.position.clone().add(
-        camera.getWorldDirection(new THREE.Vector3()).multiplyScalar(80));
-    }
-    spawnTracer(camera.position.clone(), endPoint);
-  }
-
-  // Visible bullet tracer: a thin bright line that fades out quickly
-  function spawnTracer(from, to) {
-    const geo = new THREE.BufferGeometry().setFromPoints([from, to]);
-    const mat = new THREE.LineBasicMaterial({ color: 0xffee44, transparent: true, opacity: 1 });
-    const line = new THREE.Line(geo, mat);
-    scene.add(line);
-    tracers.push({ mesh: line, life: 0.08 });
-  }
-
-  function reload() {
-    if (reloading || ammo === MAG_SIZE || !running) return;
-    reloading = true;
-    document.getElementById('ammoText').innerHTML =
-      MAG_SIZE + ' / ' + MAG_SIZE + '<span class="reload">RELOADING…</span>';
-    setTimeout(() => { ammo = MAG_SIZE; reloading = false; updateAmmoUI(); }, RELOAD_TIME * 1000);
-  }
-  function updateAmmoUI() {
-    if (!reloading) document.getElementById('ammoText').textContent = ammo + ' / ' + MAG_SIZE;
-  }
-
-  canvas.addEventListener('mousedown', e => { if (e.button === 0) shoot(); });
-
-  // ---------------------------------------------------------------------
-  // 5) ENEMIES + AI: blocky zombies that chase and melee the player
-  // ---------------------------------------------------------------------
-  const enemies = [];
-  let score = 0, wave = 1, spawnTimer = 0, spawnInterval = 2.5, waveTimer = 0;
-
-  const matZombie = new THREE.MeshLambertMaterial({ color: 0x3a7d3a, flatShading: true });
-  const matZombieHead = new THREE.MeshLambertMaterial({ color: 0x2e5e2e, flatShading: true });
-
-  // Build a simple cube-based humanoid
-  function makeZombieMesh() {
-    const g = new THREE.Group();
-    const torso = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.9, 0.35), matZombie);
-    torso.position.y = 1.0;
-    const head = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.45, 0.45), matZombieHead);
-    head.position.y = 1.75;
-    const legL = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.7, 0.25), matZombie);
-    const legR = legL.clone(); legL.position.set(-0.16, 0.35, 0); legR.position.set(0.16, 0.35, 0);
-    const armL = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.7, 0.2), matZombie);
-    const armR = armL.clone(); armL.position.set(-0.4, 1.05, 0.15); armR.position.set(0.4, 1.05, 0.15);
-    g.add(torso, head, legL, legR, armL, armR);
-    return g;
-  }
-
-  function spawnEnemy() {
-    const mesh = makeZombieMesh();
-    // Spawn at a random map edge so they walk in toward the player
-    const edge = Math.floor(Math.random() * 4);
-    let x, z;
-    if (edge === 0) { x = 1; z = Math.random() * (WORLD - 2) + 1; }
-    else if (edge === 1) { x = WORLD - 2; z = Math.random() * (WORLD - 2) + 1; }
-    else if (edge === 2) { z = 1; x = Math.random() * (WORLD - 2) + 1; }
-    else { z = WORLD - 2; x = Math.random() * (WORLD - 2) + 1; }
-
-    const enemy = {
-      mesh,
-      hp: 3 + Math.floor(wave / 3),   // tougher on later waves
-      speed: 1.8 + wave * 0.12,
-      pos: new THREE.Vector3(x, groundHeightAt(x, z), z),
-      attackCd: 0,
-      dead: false, dying: 0,
-    };
-    mesh.userData.enemyRef = enemy;    // back-reference for raycast hits
-    mesh.traverse(o => (o.userData.enemyRef = enemy));
-    mesh.position.copy(enemy.pos);
-    scene.add(mesh);
-    enemies.push(enemy);
-  }
-
-  function damageEnemy(enemy) {
-    if (enemy.dead) return;
-    enemy.hp--;
-    // flash white briefly
-    enemy.mesh.traverse(o => { if (o.material) o.material = o.material.clone(), (o.material.emissive = new THREE.Color(0x664400)); });
-    setTimeout(() => enemy.mesh.traverse(o => { if (o.material) o.material.emissive = new THREE.Color(0x000000); }), 60);
-    if (enemy.hp <= 0) {
-      enemy.dead = true; enemy.dying = 0.6;  // start fall-over animation
-      score += 10; updateScoreUI();
-    }
-  }
-
-  // Per-frame enemy update: chase player, melee at close range, death animation
-  function updateEnemies(dt) {
-    for (let i = enemies.length - 1; i >= 0; i--) {
-      const e = enemies[i];
-
-      if (e.dead) {
-        // "Fall over" then despawn
-        e.dying -= dt;
-        e.mesh.rotation.x = Math.min(Math.PI / 2, (0.6 - e.dying) * 3);
-        e.mesh.position.y = e.pos.y - (0.6 - e.dying) * 0.5;
-        if (e.dying <= 0) { scene.remove(e.mesh); enemies.splice(i, 1); }
-        continue;
-      }
-
-      // Move toward the player on the XZ plane
-      const dir = new THREE.Vector3(player.pos.x - e.pos.x, 0, player.pos.z - e.pos.z);
-      const dist = dir.length();
-      dir.normalize();
-      if (dist > 1.1) {
-        e.pos.x += dir.x * e.speed * dt;
-        e.pos.z += dir.z * e.speed * dt;
-        e.pos.y = groundHeightAt(e.pos.x, e.pos.z); // stick to terrain
-      }
-      e.mesh.position.copy(e.pos);
-      e.mesh.rotation.y = Math.atan2(dir.x, dir.z); // face the player
-      // little walk bob
-      e.mesh.position.y += Math.abs(Math.sin(performance.now() * 0.008 + i)) * 0.05;
-
-      // Melee attack when close
-      e.attackCd -= dt;
-      if (dist < 1.5 && e.attackCd <= 0) {
-        e.attackCd = 1.0;
-        damagePlayer(8);
-      }
-    }
-    document.getElementById('enemyCount').textContent = enemies.length;
-  }
-
-  function damagePlayer(amount) {
-    player.hp = Math.max(0, player.hp - amount);
-    document.getElementById('healthBar').style.width = player.hp + '%';
-    // red damage flash
-    const flash = document.getElementById('damageFlash');
-    flash.style.background = 'rgba(255,0,0,.35)';
-    setTimeout(() => (flash.style.background = 'rgba(255,0,0,0)'), 100);
-    if (player.hp <= 0) endGame();
-  }
-
-  // ---------------------------------------------------------------------
-  // 6) WAVES, UI HELPERS, MAIN LOOP, START / RESTART
-  // ---------------------------------------------------------------------
-  function updateScoreUI() { document.getElementById('score').textContent = score; }
-
-  function updateWaves(dt) {
-    // Every ~15s advance the wave: spawn faster, more/ tougher enemies
-    waveTimer += dt;
-    if (waveTimer > 15) { waveTimer = 0; wave++; spawnInterval = Math.max(0.6, spawnInterval - 0.25);
-      document.getElementById('wave').textContent = wave; }
-
-    // Spawn enemies on a timer, capped so we never tank the framerate
-    spawnTimer += dt;
-    const maxEnemies = 6 + wave * 2;
-    if (spawnTimer > spawnInterval && enemies.length < maxEnemies) {
-      spawnT
+  function makeAvat

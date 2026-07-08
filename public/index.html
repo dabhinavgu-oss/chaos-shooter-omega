@@ -6,7 +6,20 @@
   <title>Chaos Shooter Omega — 3D Voxel Multiplayer</title>
   <link rel="stylesheet" href="style.css" />
 </head>
-<body>
+<body> <div id="errbox" style="position:fixed;z-index:9999;left:0;top:0;right:0;background:#900;color:#fff;font:14px monospace;padding:8px;white-space:pre-wrap;display:none"></div>
+<script>
+  window.addEventListener('error', function(e){
+    var b=document.getElementById('errbox');
+    b.style.display='block';
+    b.textContent += 'ERROR: ' + (e.message||e) + '\n  at ' + (e.filename||'') + ':' + (e.lineno||'') + '\n';
+  });
+  window.addEventListener('load', function(){
+    var b=document.getElementById('errbox');
+    // report whether the key libraries loaded
+    b.style.display='block';
+    b.textContent += 'THREE=' + (typeof THREE) + '  io=' + (typeof io) + '  playBtn=' + (!!document.getElementById('playBtn')) + '\n';
+  });
+</script>
   <!-- HUD (hidden until playing) -->
   <div id="hud">
     <div id="crosshair"></div>

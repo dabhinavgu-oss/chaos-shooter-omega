@@ -1,6 +1,7 @@
 {
   "name": "chaos-shooter-omega",
-  "version": "1.0.0",
+  "version": "2.0.0",
+  "description": "Authoritative multiplayer 3D voxel FPS (co-op waves + PvP)",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"

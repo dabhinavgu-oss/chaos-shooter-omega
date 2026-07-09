@@ -12,6 +12,17 @@ let myId = null, running = false;
 let SEED = 0, WORLD = 50, MAX_H = 8;
 const heightMap = [];
 
+// ---------- AUDIO: tiny WebAudio synth (no asset files needed) ----------
+let AC = null;
+function beep(freq, dur, type='square', vol=0.12, slide=0){
+  if(!AC) return;
+  const t=AC.currentTime, o=AC.createOscillator(), g=AC.createGain();
+  o.type=type; o.frequency.setValueAtTime(freq,t);
+  if(slide) o.frequency.exponentialRampToValueAtTime(Math.max(30,freq+slide), t+dur);
+  g.gain.setValueAtTime(vol,t); g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
+  o.connect(g); g.connect(AC.destination); o.start(t); o.stop(t+dur);
+}
+
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x87ceeb);
 scene.fog = new THREE.Fog(0x87ceeb, 35, 90);
@@ -38,7 +49,10 @@ let gun;
   const body = new THREE.Mesh(new THREE.BoxGeometry(0.14,0.14,0.7), new THREE.MeshLambertMaterial({color:0x333333,flatShading:true}));
   const barrel = new THREE.Mesh(new THREE.BoxGeometry(0.06,0.06,0.4), new THREE.MeshLambertMaterial({color:0x111111,flatShading:true})); barrel.position.set(0,0.02,-0.5);
   const grip = new THREE.Mesh(new THREE.BoxGeometry(0.1,0.22,0.12), new THREE.MeshLambertMaterial({color:0x552200,flatShading:true})); grip.position.set(0,-0.16,0.2);
-  gun.add(body, barrel, grip);
+  const flash = new THREE.Mesh(new THREE.BoxGeometry(0.16,0.16,0.16), new THREE.MeshBasicMaterial({color:0xffee44}));
+  flash.position.set(0, 0.02, -0.76); flash.visible=false;
+  gun.add(body, barrel, grip, flash);
+  gun.userData.flash = flash;
   gun.position.set(0.28, -0.28, -0.7);
   gunScene.add(gun);
 }
@@ -128,19 +142,38 @@ canvas.addEventListener('mousedown', e=>{
   shoot();
 });
 function shoot(){
-  if(!running || !me.alive || reloading || ammo<=0){ if(ammo<=0) reload(); return; }
+  if(!running || !me.alive || reloading || ammo<=0){
+    if(ammo<=0){ beep(200,0.05,'square',0.06); reload(); }
+    return;
+  }
   ammo--; recoil=0.14; updateAmmo();
+  beep(950,0.07,'square',0.10,-600);
+  const fl=gun.userData.flash;
+  fl.visible=true; fl.rotation.z=Math.random()*Math.PI;
+  clearTimeout(fl._t); fl._t=setTimeout(()=>fl.visible=false,55);
   const dir=camera.getWorldDirection(new THREE.Vector3());
   socket.emit('shoot',{ x:camera.position.x, y:camera.position.y, z:camera.position.z, dx:dir.x, dy:dir.y, dz:dir.z });
 }
 function reload(){
   if(!running||reloading||ammo===MAG) return; reloading=true;
+  beep(430,0.07,'square',0.08);
   document.getElementById('ammoText').innerHTML = MAG+' / '+MAG+'<span class="reload">RELOADING…</span>';
-  setTimeout(()=>{ ammo=MAG; reloading=false; updateAmmo(); }, RELOAD*1000);
+  setTimeout(()=>{ ammo=MAG; reloading=false; updateAmmo(); beep(760,0.07,'square',0.08); }, RELOAD*1000);
 }
 function updateAmmo(){ if(!reloading) document.getElementById('ammoText').textContent = ammo+' / '+MAG; }
 
 const tracers=[];
+const particles=[];
+function poof(pos){
+  for(let i=0;i<8;i++){
+    const m=new THREE.Mesh(new THREE.BoxGeometry(0.16,0.16,0.16),
+      new THREE.MeshLambertMaterial({color: Math.random()<0.5?0x6b4a33:0x4fae3f, transparent:true}));
+    m.position.set(pos.x+(Math.random()-.5)*.5, pos.y+1+(Math.random()-.5)*.8, pos.z+(Math.random()-.5)*.5);
+    m.userData.v=new THREE.Vector3((Math.random()-.5)*4, 2+Math.random()*3, (Math.random()-.5)*4);
+    m.userData.life=0.6;
+    scene.add(m); particles.push(m);
+  }
+}
 function spawnTracer(o,dir){
   const to=new THREE.Vector3(o.x+dir.x*80, o.y+dir.y*80, o.z+dir.z*80);
   const g=new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(o.x,o.y,o.z),to]);
@@ -207,9 +240,15 @@ socket.on('sync', (state)=>{
     document.getElementById('healthBar').style.width = Math.max(0,mine.hp)+'%';
     if(me.alive && mine.alive && mine.hp < lastHp) flashDamage();
     lastHp = mine.hp;
+    const bar=document.getElementById('healthBar');
+    bar.className = mine.hp<=25 ? 'crit' : (mine.hp<=50 ? 'low' : '');
+    document.getElementById('healthLabel').textContent = mine.invuln ? 'HEALTH \u00b7 PROTECTED' : 'HEALTH';
     document.getElementById('score').textContent = mine.score;
     const wasAlive=me.alive; me.alive = mine.alive;
-    if(!mine.alive){ document.getElementById('deadOverlay').style.display='flex'; }
+    if(!mine.alive){
+      if(wasAlive) beep(220,0.7,'sawtooth',0.16,-190);
+      document.getElementById('deadOverlay').style.display='flex';
+    }
     else if(!wasAlive){
       document.getElementById('deadOverlay').style.display='none';
       me.x=mine.x; me.y=mine.y; me.z=mine.z; me.vy=0;
@@ -217,6 +256,8 @@ socket.on('sync', (state)=>{
   }
   document.getElementById('wave').textContent = state.wave;
   document.getElementById('pcount').textContent = Object.keys(state.players).length;
+  document.getElementById('left').textContent = state.left!=null ? state.left : '\u2013';
+  updateWaveBanner(state.wave, state.intermission|0);
 
   for(const id in state.players){
     roster[id]=state.players[id].name;
@@ -247,6 +288,37 @@ socket.on('sync', (state)=>{
 });
 
 socket.on('tracer', (t)=> spawnTracer({x:t.x,y:t.y,z:t.z},{x:t.dx,y:t.dy,z:t.dz}) );
+
+function hitmark(){
+  const c=document.getElementById('crosshair');
+  c.classList.add('hit');
+  clearTimeout(hitmark._t); hitmark._t=setTimeout(()=>c.classList.remove('hit'),120);
+}
+socket.on('enemyHit', (d)=>{
+  if(d.by===myId){ hitmark(); beep(1500,0.045,'triangle',0.10); }
+  const g=enemyMeshes[d.id];
+  if(g){
+    g.traverse(o=>{ if(o.isMesh) o.material.emissive.setHex(0xff4422); });
+    clearTimeout(g._ft); g._ft=setTimeout(()=>g.traverse(o=>{ if(o.isMesh) o.material.emissive.setHex(0x000000); }),110);
+  }
+});
+
+let bannerWave=1, bannerInter=0;
+function updateWaveBanner(w, inter){
+  const el=document.getElementById('waveBanner');
+  if(inter>0){
+    el.style.display='block';
+    el.textContent = 'WAVE '+w+' CLEARED \u2014 NEXT IN '+inter;
+    if(bannerInter===0){ beep(660,0.09,'square',0.10); setTimeout(()=>beep(880,0.09,'square',0.10),110); setTimeout(()=>beep(1100,0.12,'square',0.10),220); }
+  } else if(w!==bannerWave){
+    el.style.display='block'; el.textContent='WAVE '+w;
+    clearTimeout(updateWaveBanner._t);
+    updateWaveBanner._t=setTimeout(()=>{ el.style.display='none'; },1600);
+  } else if(bannerInter>0){
+    el.style.display='none';
+  }
+  bannerWave=w; bannerInter=inter;
+}
 socket.on('removePlayer', (id)=>{ if(otherPlayers[id]){ scene.remove(otherPlayers[id]); delete otherPlayers[id]; } });
 
 const feed=document.getElementById('killfeed');
@@ -258,12 +330,17 @@ socket.on('playerKilled', (d)=>{
   addFeed(`${victim} killed by ${by}`);
 });
 function flashDamage(){
+  beep(150,0.22,'sawtooth',0.14,-60);
   const f=document.getElementById('damageFlash');
   f.style.background='rgba(255,0,0,.35)';
   setTimeout(()=>f.style.background='rgba(255,0,0,0)',100);
 }
 socket.on('playerHit', (d)=>{ if(d.id===myId) flashDamage(); });
-socket.on('enemyKilled', (d)=>{ if(d.by===myId) addFeed('+10 zombie down'); });
+socket.on('enemyKilled', (d)=>{
+  if(d.by===myId){ addFeed('+10 zombie down'); hitmark(); beep(320,0.18,'sawtooth',0.12,-220); }
+  const g=enemyMeshes[d.id];
+  if(g){ poof(g.position); scene.remove(g); delete enemyMeshes[d.id]; }
+});
 
 // ---------- 7) MAIN LOOP ----------
 let last=performance.now();
@@ -276,6 +353,11 @@ function loop(now){
     for(let i=tracers.length-1;i>=0;i--){ const t=tracers[i]; t.life-=dt;
       t.mesh.material.opacity=Math.max(0,t.life/0.08);
       if(t.life<=0){ scene.remove(t.mesh); tracers.splice(i,1); } }
+    for(let i=particles.length-1;i>=0;i--){ const m=particles[i];
+      m.userData.life-=dt; m.userData.v.y-=12*dt;
+      m.position.addScaledVector(m.userData.v,dt);
+      m.material.opacity=Math.max(0,m.userData.life/0.6);
+      if(m.userData.life<=0){ scene.remove(m); particles.splice(i,1); } }
   }
   renderer.clear();
   renderer.render(scene, camera);
@@ -287,6 +369,7 @@ requestAnimationFrame(loop);
 
 // ---------- 8) START + RESIZE ----------
 document.getElementById('playBtn').addEventListener('click', ()=>{
+  if(!AC){ try{ AC=new (window.AudioContext||window.webkitAudioContext)(); }catch(e){} }
   document.getElementById('startScreen').style.display='none';
   document.getElementById('hud').style.display='block';
   canvas.requestPointerLock();

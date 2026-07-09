@@ -243,3 +243,29 @@ canvas { display: block; }
 @media (prefers-reduced-motion: reduce) {
   * { animation: none !important; transition: none !important; }
 }
+
+/* ================= HIT FEEDBACK + WAVES ============================= */
+
+#crosshair { transition: transform 0.08s; }
+#crosshair.hit { transform: translate(-50%, -50%) scale(1.4); }
+#crosshair.hit::before, #crosshair.hit::after { background: var(--amber); }
+
+#healthBar.low  { background: #ffb020; }
+#healthBar.crit { background: var(--blood); }
+
+#waveBanner {
+  display: none;
+  position: fixed; top: 16%; left: 50%;
+  transform: translateX(-50%);
+  z-index: 6;
+  font-size: clamp(13px, 2.6vw, 22px);
+  color: var(--amber);
+  letter-spacing: 2px;
+  white-space: nowrap;
+  background: var(--panel);
+  border: 3px solid var(--edge);
+  box-shadow: 4px 4px 0 rgba(0,0,0,0.45);
+  padding: 14px 18px;
+  animation: bannerIn 0.2s steps(3);
+}
+@keyframes bannerIn { from { transform: translateX(-50%) translateY(-10px); opacity: 0; } }

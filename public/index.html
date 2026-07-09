@@ -16,8 +16,13 @@
     <div id="waveBanner"></div>
     <div id="topInfo">SCORE: <span id="score">0</span><br/>WAVE: <span id="wave">1</span><br/>PLAYERS: <span id="pcount">1</span><br/>LEFT: <span id="left">-</span></div>
     <div id="killfeed"></div>
-    <div id="healthWrap"><div id="healthLabel">HEALTH</div><div id="healthBarBg"><div id="healthBar"></div></div></div>
+    <div id="bottomCenter">
+      <div id="shieldWrap"><div id="shieldBar"></div></div>
+      <div id="healthWrap"><div id="healthLabel">HEALTH</div><div id="healthBarBg"><div id="healthBar"></div></div></div>
+      <div id="hotbar"></div>
+    </div>
     <div id="ammo"><span id="ammoText">30 / 30</span></div>
+    <div id="scoreboard"><div class="sbTitle">SCOREBOARD</div><table><tbody></tbody></table></div>
   </div>
   <div id="damageFlash"></div>
   <div id="deadOverlay">YOU DIED — RESPAWNING…</div>
@@ -29,10 +34,14 @@
     <p class="controls">
       <span class="key">WASD</span> move
       <span class="key">SPACE</span> jump
-      <span class="key">MOUSE</span> look
       <span class="key">CLICK</span> shoot
       <span class="key">R</span> reload
+      <span class="key">1-8</span> weapons
+      <span class="key">G</span> grenade
+      <span class="key">Q</span> shield
+      <span class="key">TAB</span> scores
     </p>
+    <p class="tagline">Clear a wave, earn a weapon. A new monster joins every wave.</p>
     <div class="joinRow">
       <input id="nameInput" placeholder="Your name" maxlength="16" value="Player" />
       <input id="colorInput" type="color" value="#1e90ff" title="Your color" />

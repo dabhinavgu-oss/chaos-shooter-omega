@@ -269,3 +269,85 @@ canvas { display: block; }
   animation: bannerIn 0.2s steps(3);
 }
 @keyframes bannerIn { from { transform: translateX(-50%) translateY(-10px); opacity: 0; } }
+
+/* ================= SCOREBOARD (hold Tab) ============================ */
+
+#scoreboard {
+  display: none;
+  position: fixed; top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 7;
+  min-width: min(440px, 86vw);
+  background: var(--panel);
+  border: 3px solid var(--edge);
+  box-shadow: 6px 6px 0 rgba(0,0,0,0.45);
+  padding: 16px;
+}
+#scoreboard .sbTitle {
+  font-size: 12px; color: var(--acid); letter-spacing: 3px;
+  margin-bottom: 12px; text-align: center;
+}
+#scoreboard table { width: 100%; border-collapse: collapse; }
+#scoreboard td {
+  font-size: 10px; color: var(--ink);
+  padding: 8px 6px;
+  border-top: 2px solid rgba(59, 74, 47, 0.5);
+}
+#scoreboard td:nth-child(2), #scoreboard td:nth-child(3) { text-align: right; color: var(--dim); }
+#scoreboard tr.me td { color: var(--amber); }
+#scoreboard .sw {
+  display: inline-block; width: 10px; height: 10px;
+  margin-right: 8px; border: 2px solid rgba(0,0,0,0.5);
+  vertical-align: middle;
+}
+
+/* ================= BOTTOM-CENTER CLUSTER: shield + health + hotbar == */
+
+#bottomCenter {
+  position: fixed; bottom: 14px; left: 50%;
+  transform: translateX(-50%);
+  z-index: 5;
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
+}
+#healthWrap { position: static; }   /* overrides the old bottom-left pin */
+#healthBarBg { width: 300px; }
+#shieldWrap {
+  width: 300px; height: 12px;
+  background: rgba(0,0,0,0.65);
+  border: 3px solid #1d3a5f;
+  box-shadow: 4px 4px 0 rgba(0,0,0,0.45);
+}
+#shieldBar {
+  height: 100%; width: 0%;
+  background: #3fa7ff;
+  transition: width 0.15s steps(4);
+}
+
+#hotbar { display: flex; gap: 6px; margin-top: 4px; }
+#hotbar .slot {
+  position: relative;
+  width: 64px; height: 52px;
+  background: var(--panel);
+  border: 3px solid var(--edge);
+  box-shadow: 3px 3px 0 rgba(0,0,0,0.45);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 9px; color: var(--ink);
+}
+#hotbar .slot.sel {
+  border-color: var(--amber);
+  color: var(--amber);
+  transform: translateY(-4px);
+}
+#hotbar .num {
+  position: absolute; top: 2px; left: 4px;
+  font-size: 7px; color: var(--dim);
+}
+#hotbar .count {
+  position: absolute; bottom: 2px; right: 4px;
+  font-size: 7px; color: var(--acid);
+}
+
+@media (max-width: 700px) {
+  #healthBarBg, #shieldWrap { width: 210px; }
+  #hotbar .slot { width: 44px; height: 44px; font-size: 7px; }
+}

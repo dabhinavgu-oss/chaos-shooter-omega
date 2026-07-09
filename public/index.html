@@ -4,22 +4,12 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Chaos Shooter Omega — 3D Voxel Multiplayer</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="style.css" />
 </head>
-<body> <div id="errbox" style="position:fixed;z-index:9999;left:0;top:0;right:0;background:#900;color:#fff;font:14px monospace;padding:8px;white-space:pre-wrap;display:none"></div>
-<script>
-  window.addEventListener('error', function(e){
-    var b=document.getElementById('errbox');
-    b.style.display='block';
-    b.textContent += 'ERROR: ' + (e.message||e) + '\n  at ' + (e.filename||'') + ':' + (e.lineno||'') + '\n';
-  });
-  window.addEventListener('load', function(){
-    var b=document.getElementById('errbox');
-    // report whether the key libraries loaded
-    b.style.display='block';
-    b.textContent += 'THREE=' + (typeof THREE) + '  io=' + (typeof io) + '  playBtn=' + (!!document.getElementById('playBtn')) + '\n';
-  });
-</script>
+<body>
   <!-- HUD (hidden until playing) -->
   <div id="hud">
     <div id="crosshair"></div>
@@ -33,14 +23,20 @@
 
   <!-- Start screen -->
   <div id="startScreen" class="screen">
-    <h1>CHAOS SHOOTER OMEGA</h1>
-    <p>3D voxel multiplayer — fight the zombie waves together, or shoot each other.<br/>
-       <span class="key">WASD</span> move &nbsp;<span class="key">SPACE</span> jump &nbsp;<span class="key">MOUSE</span> look &nbsp;<span class="key">CLICK</span> shoot &nbsp;<span class="key">R</span> reload</p>
-    <div>
+    <h1>CHAOS<br/>SHOOTER<br/>OMEGA</h1>
+    <p class="tagline">Co-op zombie waves. Friendly fire very much on.</p>
+    <p class="controls">
+      <span class="key">WASD</span> move
+      <span class="key">SPACE</span> jump
+      <span class="key">MOUSE</span> look
+      <span class="key">CLICK</span> shoot
+      <span class="key">R</span> reload
+    </p>
+    <div class="joinRow">
       <input id="nameInput" placeholder="Your name" maxlength="16" value="Player" />
-      <input id="colorInput" type="color" value="#1e90ff" />
+      <input id="colorInput" type="color" value="#1e90ff" title="Your color" />
     </div>
-    <button id="playBtn" class="btn">Click to Play</button>
+    <button id="playBtn" class="btn">CLICK TO PLAY</button>
   </div>
 
   <!-- Libraries: Three.js from CDN, Socket.io served by our own server -->

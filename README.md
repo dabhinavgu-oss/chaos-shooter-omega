@@ -1,14 +1,15 @@
 # Chaos Shooter Omega
 
-A real-time multiplayer **3D voxel FPS** built with Node.js, Express, Socket.io, and Three.js. Everyone shares one procedurally generated blocky world: fight the zombie waves together — or turn on each other, because PvP is always live.
+A real-time multiplayer **3D voxel FPS** built with Node.js, Express, Socket.io, and Three.js. Everyone shares one procedurally generated blocky world: clear the zombie waves together — or turn on each other, because PvP is always live.
 
 ## Features
-- **Server-authoritative multiplayer** — the server owns the world seed, all player HP/scores, the enemy AI, and resolves every hit with its own raycasts. Clients only send intent (movement + shots) and render synced state.
+- **Server-authoritative multiplayer** — the server owns the world seed, player HP/scores, enemy AI, and resolves every hit with its own raycasts. Clients only send intent (movement + shots) and render synced state.
+- **Real wave structure** — each wave spawns a fixed budget of zombies (scaling with wave number and player count). Clear them all and you get a 6-second breather before the next wave hits. A full team wipe restarts the current wave instead of snowballing.
+- **Zombies that fight fair(ish)** — they shove each other apart instead of stacking into a blob, get knocked back and staggered when shot, and their speed is capped so you can always outrun them. Kill feedback: flinch flash, hitmarker, block-scatter death particles.
+- **Spawn protection** — 2.5s of invulnerability on every spawn (firing forfeits it), and respawn points are chosen away from the horde.
+- **Synth sound effects** — gunfire, hits, kills, hurt, reload, death, and wave-clear jingle, all generated with WebAudio. No audio files.
+- **Full HUD** — health bar (color shifts as it drops), ammo, score, wave, zombies left, player count, kill feed with names, wave banners, damage flash, and nametags over other players.
 - **Shared procedural voxel terrain** — every client rebuilds the identical 50×50 map from one seed.
-- **Co-op zombie waves** that scale with the wave number *and* the player count, with kill scoring (+10 zombie, +50 player).
-- **First-person controls** — pointer-lock mouse look, WASD, jump, reload, recoil, tracers.
-- **Full HUD** — health bar, ammo, score, wave, player count, kill feed with names, damage flash, and nametags floating over other players.
-- **Death & respawn cycle** (4 s), per-player name and color chosen on the start screen.
 
 ## Getting Started
 ```bash

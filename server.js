@@ -60,15 +60,29 @@ function groundHeightAt(wx, wz) {
 // ---------------------------------------------------------------------
 const players = {};   // socketId -> {x,y,z,yaw,hp,score,name,color,alive,respawnAt}
 const enemies = [];   // shared co-op zombies
-let wave = 1, spawnTimer = 0, waveTimer = 0, spawnInterval = 2.5;
+let wave = 1, budget = 0, spawnTimer = 0, spawnInterval = 1.6;
+let waveActive = false, intermission = 0;
+function waveBudget(w) {
+  const n = Object.keys(players).length || 1;
+  return 5 + w * 3 + Math.max(0, n - 1) * 2;   // more players -> more zombies
+}
 
 const PLAYER_MAX_HP = 100;
 const RESPAWN_MS = 4000;
 
 function randomSpawn() {
-  const x = 5 + Math.random() * (WORLD - 10);
-  const z = 5 + Math.random() * (WORLD - 10);
-  return { x, z, y: groundHeightAt(x, z) };
+  // Try several spots and keep the one farthest from the nearest zombie,
+  // so respawning never drops you inside the horde.
+  let best = null, bestScore = -1;
+  for (let i = 0; i < 10; i++) {
+    const x = 5 + Math.random() * (WORLD - 10);
+    const z = 5 + Math.random() * (WORLD - 10);
+    let nearest = Infinity;
+    for (const e of enemies) nearest = Math.min(nearest, Math.hypot(e.x - x, e.z - z));
+    const score = enemies.length ? nearest : 1;
+    if (score > bestScore) { bestScore = score; best = { x, z, y: groundHeightAt(x, z) }; }
+  }
+  return best;
 }
 
 function makeEnemy() {
@@ -81,8 +95,8 @@ function makeEnemy() {
   return {
     id: Math.random().toString(36).slice(2),
     x, y: groundHeightAt(x, z), z,
-    hp: 3 + Math.floor(wave / 3),
-    speed: 1.8 + wave * 0.12,
+    hp: Math.min(8, 3 + Math.floor(wave / 2)),
+    speed: Math.min(4.2, 1.7 + wave * 0.1),   // capped: players (speed 6) can always kite
     attackCd: 0,
   };
 }
@@ -98,6 +112,7 @@ io.on("connection", (socket) => {
     hp: PLAYER_MAX_HP, score: 0,
     name: "Player", color: "#1e90ff",
     alive: true, respawnAt: 0,
+    invulnUntil: Date.now() + 2500, invuln: true,   // brief spawn protection
   };
 
   // Send the world seed + current state so the client can build the map
@@ -127,6 +142,7 @@ io.on("connection", (socket) => {
   socket.on("shoot", (d) => {
     const shooter = players[socket.id];
     if (!shooter || !shooter.alive) return;
+    shooter.invulnUntil = 0;   // firing forfeits spawn protection
     const origin = { x: +d.x, y: +d.y, z: +d.z };
     const dir = normalize({ x: +d.dx, y: +d.dy, z: +d.dz });
 
@@ -145,15 +161,22 @@ io.on("connection", (socket) => {
     for (const id in players) {
       if (id === socket.id) continue;
       const tp = players[id];
-      if (!tp.alive) continue;
+      if (!tp.alive || tp.invuln) continue;   // can't shoot protected players
       const t = raySphere(origin, dir, { x: tp.x, y: tp.y + 1.2, z: tp.z }, 0.8);
       if (t !== null && t < bestT) { bestT = t; best = { type: "player", id, ref: tp }; }
     }
 
     if (!best) return;
     if (best.type === "enemy") {
-      best.ref.hp -= 1;
-      if (best.ref.hp <= 0) {
+      const e = best.ref;
+      e.hp -= 1;
+      // Knockback + brief stagger: shots FEEL like they land
+      e.x = Math.max(1, Math.min(WORLD - 2, e.x + dir.x * 0.6));
+      e.z = Math.max(1, Math.min(WORLD - 2, e.z + dir.z * 0.6));
+      e.y = groundHeightAt(e.x, e.z);
+      e.staggerUntil = Date.now() + 250;
+      io.emit("enemyHit", { id: e.id, by: socket.id });
+      if (e.hp <= 0) {
         const i = enemies.indexOf(best.ref);
         if (i !== -1) enemies.splice(i, 1);
         shooter.score += 10;
@@ -217,18 +240,36 @@ setInterval(() => {
     if (!p.alive && now >= p.respawnAt) {
       const s = randomSpawn();
       p.x = s.x; p.y = s.y; p.z = s.z; p.hp = PLAYER_MAX_HP; p.alive = true;
+      p.invulnUntil = now + 2500;   // spawn protection
     }
   }
 
-  // --- Waves: ramp difficulty over time (co-op) ---
-  waveTimer += dt;
-  if (waveTimer > 15) { waveTimer = 0; wave++; spawnInterval = Math.max(0.6, spawnInterval - 0.25); }
-  spawnTimer += dt;
+  // --- Invulnerability flags (computed once per tick) ---
+  for (const id in players) { const p = players[id]; p.invuln = p.alive && now < p.invulnUntil; }
+
+  // --- Waves: spawn a fixed budget, wait for the clear, breathe, repeat ---
   const alivePlayers = Object.values(players).filter(p => p.alive).length;
-  const maxEnemies = 6 + wave * 2 + alivePlayers * 2;    // scale with player count
-  if (alivePlayers > 0 && spawnTimer > spawnInterval && enemies.length < maxEnemies) {
-    spawnTimer = 0;
-    enemies.push(makeEnemy());
+  if (alivePlayers === 0) {
+    // Full wipe: clear the horde so respawners restart this wave fresh
+    if (enemies.length || waveActive) { enemies.length = 0; waveActive = false; intermission = 0; }
+  } else if (intermission > 0) {
+    intermission -= dt;
+    if (intermission <= 0) {
+      intermission = 0; wave++; waveActive = true;
+      budget = waveBudget(wave);
+      spawnInterval = Math.max(0.5, 1.6 - wave * 0.06);
+      spawnTimer = spawnInterval;   // first zombie shows up promptly
+    }
+  } else if (!waveActive) {
+    waveActive = true; budget = waveBudget(wave); spawnTimer = spawnInterval;
+  } else {
+    spawnTimer += dt;
+    const cap = 10 + Object.keys(players).length * 2;   // on screen at once
+    if (budget > 0 && spawnTimer > spawnInterval && enemies.length < cap) {
+      spawnTimer = 0; budget--;
+      enemies.push(makeEnemy());
+    }
+    if (budget === 0 && enemies.length === 0) intermission = 6;   // wave cleared!
   }
 
   // --- Enemy AI: chase nearest ALIVE player, melee at close range ---
@@ -241,15 +282,16 @@ setInterval(() => {
       if (dist < best) { best = dist; target = p; }
     }
     if (!target) continue;
+    const staggered = e.staggerUntil && now < e.staggerUntil;
     const dx = target.x - e.x, dz = target.z - e.z;
     const dist = Math.hypot(dx, dz) || 1;
-    if (dist > 1.2) {
+    if (dist > 1.2 && !staggered) {
       e.x += (dx / dist) * e.speed * dt;
       e.z += (dz / dist) * e.speed * dt;
       e.y = groundHeightAt(e.x, e.z);
     }
     e.attackCd -= dt;
-    if (dist < 1.6 && e.attackCd <= 0) {
+    if (dist < 1.6 && e.attackCd <= 0 && !staggered && !target.invuln) {
       e.attackCd = 1.0;
       target.hp -= 8;
       if (target.hp <= 0) {
@@ -262,8 +304,29 @@ setInterval(() => {
     }
   }
 
+  // --- Separation: zombies shove each other apart instead of stacking ---
+  for (let i = 0; i < enemies.length; i++) {
+    for (let j = i + 1; j < enemies.length; j++) {
+      const a = enemies[i], b = enemies[j];
+      const sx = b.x - a.x, sz = b.z - a.z;
+      const d = Math.hypot(sx, sz);
+      if (d > 0.001 && d < 1.1) {
+        const push = (1.1 - d) * 0.5, ux = sx / d, uz = sz / d;
+        a.x = Math.max(1, Math.min(WORLD - 2, a.x - ux * push));
+        a.z = Math.max(1, Math.min(WORLD - 2, a.z - uz * push));
+        b.x = Math.max(1, Math.min(WORLD - 2, b.x + ux * push));
+        b.z = Math.max(1, Math.min(WORLD - 2, b.z + uz * push));
+        a.y = groundHeightAt(a.x, a.z); b.y = groundHeightAt(b.x, b.z);
+      }
+    }
+  }
+
   // --- Broadcast the authoritative snapshot ---
-  io.emit("sync", { players, enemies, wave });
+  io.emit("sync", {
+    players, enemies, wave,
+    left: enemies.length + budget,          // zombies remaining this wave
+    intermission: Math.ceil(intermission),  // seconds until next wave (0 = fighting)
+  });
 }, TICK);
 
 // ---------------------------------------------------------------------

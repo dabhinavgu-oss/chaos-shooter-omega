@@ -121,7 +121,12 @@ function updatePlayer(dt){
 
 // ---------- 4) SHOOTING (send intent; recoil/ammo are local feel) ----------
 const MAG=30, RELOAD=1.3; let ammo=MAG, reloading=false, recoil=0;
-canvas.addEventListener('mousedown', e=>{ if(e.button===0) shoot(); });
+canvas.addEventListener('mousedown', e=>{
+  if(e.button!==0) return;
+  // After Esc, the first click re-captures the mouse instead of firing
+  if(running && document.pointerLockElement!==canvas){ canvas.requestPointerLock(); return; }
+  shoot();
+});
 function shoot(){
   if(!running || !me.alive || reloading || ammo<=0){ if(ammo<=0) reload(); return; }
   ammo--; recoil=0.14; updateAmmo();
@@ -145,8 +150,22 @@ function spawnTracer(o,dir){
 
 // ---------- 5) REMOTE ENTITIES (other players + shared enemies) ----------
 const otherPlayers={};
+const roster={};   // id -> latest name (killfeed + nametags)
+let lastHp=100;    // detect hp drops so ANY damage flashes (zombies included)
 const enemyMeshes={};
 
+function makeNameTag(text){
+  const cv=document.createElement('canvas'); cv.width=256; cv.height=64;
+  const ctx=cv.getContext('2d');
+  ctx.font='bold 30px monospace'; ctx.textAlign='center'; ctx.textBaseline='middle';
+  const w=Math.min(244, ctx.measureText(text).width+28);
+  ctx.fillStyle='rgba(0,0,0,0.55)'; ctx.fillRect(128-w/2, 10, w, 44);
+  ctx.fillStyle='#ffffff'; ctx.fillText(text, 128, 33);
+  const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:new THREE.CanvasTexture(cv), transparent:true}));
+  sp.scale.set(2.2, 0.55, 1);
+  sp.position.y=2.35;
+  return sp;
+}
 function makeAvatar(color){
   const g=new THREE.Group();
   const mat=new THREE.MeshLambertMaterial({color:color||0x1e90ff, flatShading:true});
@@ -160,8 +179,8 @@ function makeAvatar(color){
 }
 function makeZombie(){
   const g=new THREE.Group();
-  const body=new THREE.MeshLambertMaterial({color:0x3a7d3a,flatShading:true});
-  const head=new THREE.MeshLambertMaterial({color:0x2e5e2e,flatShading:true});
+  const body=new THREE.MeshLambertMaterial({color:0x6b4a33,flatShading:true});   // torn clothes
+  const head=new THREE.MeshLambertMaterial({color:0x4fae3f,flatShading:true});   // zombie skin, pops against grass
   const torso=new THREE.Mesh(new THREE.BoxGeometry(0.6,0.9,0.35),body); torso.position.y=1.0;
   const hd=new THREE.Mesh(new THREE.BoxGeometry(0.45,0.45,0.45),head); hd.position.y=1.75;
   const legL=new THREE.Mesh(new THREE.BoxGeometry(0.22,0.7,0.25),body); legL.position.set(-0.16,0.35,0);
@@ -176,6 +195,8 @@ function makeZombie(){
 socket.on('init', (data)=>{
   myId=data.id; SEED=data.seed; WORLD=data.world; MAX_H=data.maxH;
   buildTerrain();
+  const spawn = data.players[data.id];   // server picked a random spawn for us
+  if(spawn){ me.x=spawn.x; me.y=spawn.y; me.z=spawn.z; me.vy=0; }
   socket.emit('setName', document.getElementById('nameInput').value);
   socket.emit('setColor', document.getElementById('colorInput').value);
 });
@@ -184,6 +205,8 @@ socket.on('sync', (state)=>{
   const mine = state.players[myId];
   if(mine){
     document.getElementById('healthBar').style.width = Math.max(0,mine.hp)+'%';
+    if(me.alive && mine.alive && mine.hp < lastHp) flashDamage();
+    lastHp = mine.hp;
     document.getElementById('score').textContent = mine.score;
     const wasAlive=me.alive; me.alive = mine.alive;
     if(!mine.alive){ document.getElementById('deadOverlay').style.display='flex'; }
@@ -196,10 +219,16 @@ socket.on('sync', (state)=>{
   document.getElementById('pcount').textContent = Object.keys(state.players).length;
 
   for(const id in state.players){
+    roster[id]=state.players[id].name;
     if(id===myId) continue;
     const p=state.players[id];
     if(!otherPlayers[id]) otherPlayers[id]=makeAvatar(p.color);
     const g=otherPlayers[id];
+    if(g.userData.name!==p.name){
+      if(g.userData.tag) g.remove(g.userData.tag);
+      const tag=makeNameTag(p.name); g.add(tag);
+      g.userData.tag=tag; g.userData.name=p.name;
+    }
     g.visible=p.alive;
     g.position.set(p.x, p.y, p.z);
     g.rotation.y = p.yaw;
@@ -223,8 +252,17 @@ socket.on('removePlayer', (id)=>{ if(otherPlayers[id]){ scene.remove(otherPlayer
 const feed=document.getElementById('killfeed');
 function addFeed(txt){ const d=document.createElement('div'); d.textContent=txt; feed.appendChild(d);
   setTimeout(()=>d.remove(),4000); while(feed.children.length>5) feed.firstChild.remove(); }
-socket.on('playerKilled', (d)=>{ const by = d.by==='zombie'?'a zombie':(d.by===myId?'YOU':'someone'); addFeed(`${d.id===myId?'You were':'A player was'} killed by ${by}`); });
-socket.on('playerHit', (d)=>{ if(d.id===myId){ const f=document.getElementById('damageFlash'); f.style.background='rgba(255,0,0,.35)'; setTimeout(()=>f.style.background='rgba(255,0,0,0)',100);} });
+socket.on('playerKilled', (d)=>{
+  const victim = d.id===myId ? 'You were' : `${roster[d.id]||'A player'} was`;
+  const by = d.by==='zombie' ? 'a zombie' : (d.by===myId ? 'YOU' : (roster[d.by]||'someone'));
+  addFeed(`${victim} killed by ${by}`);
+});
+function flashDamage(){
+  const f=document.getElementById('damageFlash');
+  f.style.background='rgba(255,0,0,.35)';
+  setTimeout(()=>f.style.background='rgba(255,0,0,0)',100);
+}
+socket.on('playerHit', (d)=>{ if(d.id===myId) flashDamage(); });
 socket.on('enemyKilled', (d)=>{ if(d.by===myId) addFeed('+10 zombie down'); });
 
 // ---------- 7) MAIN LOOP ----------

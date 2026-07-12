@@ -126,7 +126,7 @@ function killEnemy(e, by) {
   e._dead = true;
   enemies.splice(i, 1);
   if (by && players[by]) players[by].score += e.pts;
-  io.emit("enemyKilled", { id: e.id, by, kind: e.kind });
+  io.emit("enemyKilled", { id: e.id, by, kind: e.kind, pts: e.pts, elite: e.elite || false });
   if (e.kind === "exploder" && !e._selfDetonated) explode(e.x, e.y + 0.8, e.z, 16, 3.0, by);
   const r = Math.random();
   if (r < 0.34) {
@@ -185,19 +185,27 @@ function edgeSpawn() {
 
 // One NEW monster unlocks every wave (intro), then keeps appearing, slightly stronger each wave
 const KINDS = {
-  walker:   { intro: 1, hp: 4,  speed: 1.8,  cap: 4.0, dmg: 8,  pts: 10,  reach: 1.6 },
-  runner:   { intro: 2, hp: 2,  speed: 3.6,  cap: 5.2, dmg: 5,  pts: 15,  reach: 1.5 },
-  spitter:  { intro: 3, hp: 3,  speed: 1.6,  cap: 2.6, dmg: 10, pts: 20,  reach: 1.4 },
-  brute:    { intro: 4, hp: 16, speed: 1.2,  cap: 1.9, dmg: 16, pts: 30,  reach: 1.9 },
-  leaper:   { intro: 5, hp: 3,  speed: 2.0,  cap: 3.2, dmg: 12, pts: 25,  reach: 1.5 },
-  screamer: { intro: 6, hp: 5,  speed: 1.5,  cap: 2.4, dmg: 4,  pts: 35,  reach: 1.4 },
-  exploder: { intro: 7, hp: 2,  speed: 2.8,  cap: 4.4, dmg: 0,  pts: 25,  reach: 1.7 },
-  warden:   { intro: 8, hp: 40, speed: 1.35, cap: 1.9, dmg: 22, pts: 100, reach: 2.1 },   // mini-boss, spawned separately
+  walker:    { intro: 1,  hp: 4,  speed: 1.8,  cap: 4.0, dmg: 8,  pts: 10,  reach: 1.6 },
+  runner:    { intro: 2,  hp: 2,  speed: 3.6,  cap: 5.2, dmg: 5,  pts: 15,  reach: 1.5 },
+  spitter:   { intro: 3,  hp: 3,  speed: 1.6,  cap: 2.6, dmg: 10, pts: 20,  reach: 1.4 },
+  brute:     { intro: 4,  hp: 16, speed: 1.2,  cap: 1.9, dmg: 16, pts: 30,  reach: 1.9 },
+  leaper:    { intro: 5,  hp: 3,  speed: 2.0,  cap: 3.2, dmg: 12, pts: 25,  reach: 1.5 },
+  screamer:  { intro: 6,  hp: 5,  speed: 1.5,  cap: 2.4, dmg: 4,  pts: 35,  reach: 1.4 },
+  exploder:  { intro: 7,  hp: 2,  speed: 2.8,  cap: 4.4, dmg: 0,  pts: 25,  reach: 1.7 },
+  warden:    { intro: 8,  hp: 40, speed: 1.35, cap: 1.9, dmg: 22, pts: 100, reach: 2.1 },   // mini-boss, spawned separately
+  shielder:  { intro: 9,  hp: 10, speed: 1.4,  cap: 2.0, dmg: 9,  pts: 30,  reach: 1.6, frontDR: 0.7  },  // 70% less dmg from the front; flank it
+  charger:   { intro: 10, hp: 5,  speed: 1.7,  cap: 2.6, dmg: 14, pts: 30,  reach: 1.6, dashSpeed: 9.5 }, // telegraphed straight-line dash
+  spawner:   { intro: 11, hp: 6,  speed: 1.3,  cap: 1.8, dmg: 6,  pts: 30,  reach: 1.5 },                 // periodically births a swarmling
+  swarmling: { intro: 12, hp: 1,  speed: 2.6,  cap: 3.6, dmg: 3,  pts: 5,   reach: 1.3 },                 // cheap, weak, shows up in numbers
+  poisoner:  { intro: 13, hp: 4,  speed: 1.7,  cap: 2.6, dmg: 4,  pts: 30,  reach: 1.5, poison: 2 },      // hit applies a damage-over-time tick
+  burrower:  { intro: 14, hp: 5,  speed: 2.2,  cap: 3.0, dmg: 14, pts: 35,  reach: 1.6 },                 // invisible until it erupts nearby
+  netter:    { intro: 15, hp: 3,  speed: 1.5,  cap: 2.2, dmg: 0,  pts: 30,  reach: 1.4 },                 // ranged root shot, no damage
+  colossus:  { intro: 16, hp: 70, speed: 1.1,  cap: 1.6, dmg: 28, pts: 160, reach: 2.4 },                 // 2nd mini-boss tier, spawned separately
 };
 function pickKind() {
   const pool = [];
   for (const k in KINDS) {
-    if (k === "warden" || KINDS[k].intro > wave) continue;
+    if (k === "warden" || k === "colossus" || KINDS[k].intro > wave) continue;
     const w = KINDS[k].intro === wave ? 3 : 1;   // this wave's debut monster shows up a lot
     for (let i = 0; i < w; i++) pool.push(k);
   }
@@ -207,14 +215,22 @@ function makeEnemyOfKind(kind) {
   const { x, z } = edgeSpawn();
   const base = KINDS[kind];
   const grow = Math.max(0, wave - base.intro);
-  const hp = Math.round((base.hp + (kind === "warden" ? wave * 2 : 0)) * (1 + 0.06 * grow));
+  const isBoss = kind === "warden" || kind === "colossus";
+  // Elites: rare stat-boosted variant of any regular kind. This is what makes the
+  // roster feel bigger than 16 archetypes without 100 shallow copy-paste entries.
+  const elite = !isBoss && wave >= 5 && Math.random() < Math.min(0.22, 0.06 + wave * 0.01);
+  const hp = Math.round((base.hp + (isBoss ? wave * 2 : 0)) * (1 + 0.06 * grow) * (elite ? 1.6 : 1));
   return {
     id: Math.random().toString(36).slice(2),
-    x, z, y: groundHeightAt(x, z), yaw: 0, kind,
+    x, z, y: groundHeightAt(x, z), yaw: 0, kind, elite,
     hp, maxHp: hp,
-    speed: Math.min(base.cap, base.speed + 0.05 * grow),
-    dmg: base.dmg, pts: base.pts, reach: base.reach,
-    attackCd: 0, lungeCd: 0,
+    speed: Math.min(base.cap * (elite ? 1.15 : 1), base.speed + 0.05 * grow),
+    dmg: Math.round(base.dmg * (elite ? 1.3 : 1)),
+    pts: Math.round(base.pts * (elite ? 2 : 1)),
+    reach: base.reach,
+    frontDR: base.frontDR || 0, dashSpeed: base.dashSpeed || 0, poison: base.poison || 0,
+    attackCd: 0, lungeCd: 0, dashCd: 2 + Math.random() * 2, spawnCd: 4 + Math.random() * 2,
+    burrowed: kind === "burrower",
   };
 }
 function makeEnemy() { return makeEnemyOfKind(pickKind()); }
@@ -247,13 +263,15 @@ io.on("connection", (socket) => {
   socket.on("move", (d) => {
     const p = players[socket.id];
     if (!p || !p.alive) return;
+    p.yaw = +d.yaw || 0;
+    if (p.rootedUntil && Date.now() < p.rootedUntil) return;   // netted: can look, can't move
     let x = Math.max(0.5, Math.min(WORLD - 1.5, +d.x || 0));
     let z = Math.max(0.5, Math.min(WORLD - 1.5, +d.z || 0));
     let y = +d.y || 0;
     const ground = groundHeightAt(x, z);
     if (y < ground) y = ground;                 // can't sink through terrain
     if (y > ground + 6) y = ground + 6;         // anti-fly clamp
-    p.x = x; p.y = y; p.z = z; p.yaw = +d.yaw || 0;
+    p.x = x; p.y = y; p.z = z;
   });
 
   // Player fires. Client sends ray origin + normalized direction.
@@ -301,7 +319,12 @@ io.on("connection", (socket) => {
 
       if (best.type === "enemy") {
         const e = best.ref;
-        e.hp -= spec.dmg;
+        let dmg = spec.dmg;
+        if (e.kind === "shielder" && e.frontDR) {
+          const fx = Math.sin(e.yaw), fz = Math.cos(e.yaw);   // enemy always faces its target
+          if (dir.x * fx + dir.z * fz < -0.3) dmg *= (1 - e.frontDR);   // shot came from the front: flank it instead
+        }
+        e.hp -= dmg;
         e.x = Math.max(1, Math.min(WORLD - 2, e.x + dir.x * spec.knock));
         e.z = Math.max(1, Math.min(WORLD - 2, e.z + dir.z * spec.knock));
         e.y = groundHeightAt(e.x, e.z);
@@ -383,6 +406,7 @@ setInterval(() => {
       const s = randomSpawn();
       p.x = s.x; p.y = s.y; p.z = s.z; p.hp = PLAYER_MAX_HP; p.alive = true;
       p.invulnUntil = now + 2500;   // spawn protection
+      p.poisonUntil = 0; p.rootedUntil = 0;
     }
   }
 
@@ -401,8 +425,14 @@ setInterval(() => {
       budget = waveBudget(wave);
       spawnInterval = Math.max(0.45, 1.6 - wave * 0.06);
       spawnTimer = spawnInterval;   // first zombie shows up promptly
-      for (let k = 0; k < (wave >= 8 ? 1 + Math.floor((wave - 8) / 4) : 0); k++)
-        enemies.push(makeEnemyOfKind("warden"));   // mini-boss escort from wave 8
+      if (wave >= KINDS.warden.intro) {
+        const n = 1 + Math.floor((wave - KINDS.warden.intro) / 4);
+        for (let k = 0; k < n; k++) enemies.push(makeEnemyOfKind("warden"));
+      }
+      if (wave >= KINDS.colossus.intro) {
+        const n = 1 + Math.floor((wave - KINDS.colossus.intro) / 6);   // rarer escort than warden
+        for (let k = 0; k < n; k++) enemies.push(makeEnemyOfKind("colossus"));
+      }
     }
   } else if (!waveActive) {
     waveActive = true; budget = waveBudget(wave); spawnTimer = spawnInterval;
@@ -436,11 +466,26 @@ setInterval(() => {
     e.yaw = Math.atan2(dx, dz);
     e.attackCd -= dt;
     e.lungeCd -= dt;
+    e.dashCd -= dt;
+    e.spawnCd -= dt;
 
     // Screamer aura: nearby monsters move 40% faster
     let spd = e.speed;
     for (const s of screamers) {
       if (s !== e && Math.hypot(s.x - e.x, s.z - e.z) < 6) { spd *= 1.4; break; }
+    }
+
+    // Burrower: hidden (client renders it invisible) until it closes to melee range
+    if (e.kind === "burrower" && e.burrowed && dist < 3) e.burrowed = false;
+
+    // Spawner: periodically births a cheap swarmling nearby, then keeps fighting normally
+    if (e.kind === "spawner" && e.spawnCd <= 0 && enemies.length < 40) {
+      e.spawnCd = 5 + Math.random() * 3;
+      const ns = makeEnemyOfKind("swarmling");
+      ns.x = Math.max(1, Math.min(WORLD - 2, e.x + (Math.random() - 0.5) * 3));
+      ns.z = Math.max(1, Math.min(WORLD - 2, e.z + (Math.random() - 0.5) * 3));
+      ns.y = groundHeightAt(ns.x, ns.z);
+      enemies.push(ns);
     }
 
     if (e.kind === "spitter") {
@@ -467,6 +512,30 @@ setInterval(() => {
       continue;
     }
 
+    if (e.kind === "netter") {
+      // Same footwork as spitter, but the shot snares instead of hurting
+      if (!staggered) {
+        if (dist > 9)      { e.x += (dx / dist) * spd * dt; e.z += (dz / dist) * spd * dt; }
+        else if (dist < 5) { e.x -= (dx / dist) * spd * 0.8 * dt; e.z -= (dz / dist) * spd * 0.8 * dt; }
+        e.x = Math.max(1, Math.min(WORLD - 2, e.x));
+        e.z = Math.max(1, Math.min(WORLD - 2, e.z));
+        e.y = groundHeightAt(e.x, e.z);
+      }
+      if (dist < 13 && e.attackCd <= 0 && !target.invuln) {
+        e.attackCd = 3.2;
+        io.emit("enemyAttack", { id: e.id });
+        const sy = e.y + 1.4, ty = target.y + 1.2;
+        const d3 = Math.hypot(dx, ty - sy, dz) || 1;
+        blobs.push({
+          id: Math.random().toString(36).slice(2),
+          x: e.x, y: sy, z: e.z,
+          vx: dx / d3 * 12, vy: (ty - sy) / d3 * 12 + 0.6 * d3, vz: dz / d3 * 12,
+          dmg: 0, root: 1800, ttl: 2.2,
+        });
+      }
+      continue;
+    }
+
     if (e.kind === "exploder" && dist < (e.reach || 1.7)) {
       e._selfDetonated = true;
       explode(e.x, e.y + 0.8, e.z, 16, 3.0, null);
@@ -481,6 +550,13 @@ setInterval(() => {
     }
     if (e.kind === "leaper" && now < (e.lungeUntil || 0)) spd = 7.5;
 
+    if (e.kind === "charger" && !staggered && e.dashCd <= 0 && dist > 5 && dist < 12) {
+      e.lungeUntil = now + 500;   // telegraphed straight-line dash
+      e.dashCd = 4;
+      io.emit("enemyAttack", { id: e.id });
+    }
+    if (e.kind === "charger" && now < (e.lungeUntil || 0)) spd = e.dashSpeed || 9;
+
     if (dist > 1.2 && !staggered) {
       e.x += (dx / dist) * spd * dt;
       e.z += (dz / dist) * spd * dt;
@@ -490,10 +566,11 @@ setInterval(() => {
       e.attackCd = 1.0;
       io.emit("enemyAttack", { id: e.id });
       hurtPlayer(targetId, target, e.dmg || 8, "zombie");
+      if (e.kind === "poisoner") target.poisonUntil = now + (e.poison || 2) * 1000 + 2000;
     }
   }
 
-  // --- Acid blobs (spitter projectiles) ---
+  // --- Acid blobs (spitter) + net shots (netter) share the same arc physics ---
   for (let i = blobs.length - 1; i >= 0; i--) {
     const b = blobs[i];
     b.ttl -= dt;
@@ -504,11 +581,21 @@ setInterval(() => {
       const p = players[id];
       if (!p.alive) continue;
       if (Math.hypot(p.x - b.x, (p.y + 1.2) - b.y, p.z - b.z) < 0.8) {
-        hurtPlayer(id, p, b.dmg, "zombie");
+        if (b.root) { p.rootedUntil = Date.now() + b.root; io.emit("netted", { id }); }
+        else hurtPlayer(id, p, b.dmg, "zombie");
         gone = true; break;
       }
     }
     if (gone) blobs.splice(i, 1);
+  }
+
+  // --- Poison ticks (poisoner's damage-over-time) ---
+  for (const id in players) {
+    const p = players[id];
+    if (p.alive && p.poisonUntil && now < p.poisonUntil && now >= (p.nextPoisonTick || 0)) {
+      p.nextPoisonTick = now + 500;
+      hurtPlayer(id, p, 2, "zombie");
+    }
   }
 
   // --- Grenades (player throwables): arc, then boom ---
@@ -536,23 +623,6 @@ setInterval(() => {
         io.emit("pickup", { id: pk.id, by: id, kind: pk.kind });
         pickups.splice(i, 1);
         break;
-      }
-    }
-  }
-
-  // --- Separation: zombies shove each other apart instead of stacking ---
-  for (let i = 0; i < enemies.length; i++) {
-    for (let j = i + 1; j < enemies.length; j++) {
-      const a = enemies[i], b = enemies[j];
-      const sx = b.x - a.x, sz = b.z - a.z;
-      const d = Math.hypot(sx, sz);
-      if (d > 0.001 && d < 1.1) {
-        const push = (1.1 - d) * 0.5, ux = sx / d, uz = sz / d;
-        a.x = Math.max(1, Math.min(WORLD - 2, a.x - ux * push));
-        a.z = Math.max(1, Math.min(WORLD - 2, a.z - uz * push));
-        b.x = Math.max(1, Math.min(WORLD - 2, b.x + ux * push));
-        b.z = Math.max(1, Math.min(WORLD - 2, b.z + uz * push));
-        a.y = groundHeightAt(a.x, a.z); b.y = groundHeightAt(b.x, b.z);
       }
     }
   }

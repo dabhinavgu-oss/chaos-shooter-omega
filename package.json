@@ -1,14 +1,19 @@
 {
   "name": "chaos-shooter-omega",
-  "version": "2.0.0",
-  "description": "Authoritative multiplayer 3D voxel FPS (co-op waves + PvP)",
+  "version": "3.0.0",
+  "description": "Authoritative multiplayer 3D voxel FPS (co-op waves + PvP + parties + friends)",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "init-db": "node init-db.js"
   },
   "dependencies": {
     "express": "^4.21.2",
     "socket.io": "^4.8.1",
-    "socket.io-client": "^4.8.3"
+    "socket.io-client": "^4.8.3",
+    "sqlite3": "^5.1.6",
+    "bcryptjs": "^2.4.3",
+    "jsonwebtoken": "^9.1.2",
+    "cookie-parser": "^1.4.6"
   }
 }

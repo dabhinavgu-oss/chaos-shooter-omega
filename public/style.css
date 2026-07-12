@@ -143,6 +143,70 @@ canvas { display: block; }
 }
 @keyframes pulse { 50% { opacity: 0.55; } }
 
+#spectateOverlay {
+  display: none;                          /* game.js flips to flex */
+  position: fixed; inset: 0;
+  z-index: 10;
+  flex-direction: column;
+  align-items: center; justify-content: center;
+  gap: 12px;
+  background: rgba(6, 10, 18, 0.86);
+  color: var(--ink);
+  text-align: center;
+  padding: 0 20px;
+  pointer-events: none;
+}
+#spectateTitle {
+  font-size: clamp(16px, 3.6vw, 30px);
+  letter-spacing: 3px;
+  color: var(--dim);
+  text-shadow: 4px 4px 0 #000;
+}
+#spectateName { font-size: clamp(11px, 2.2vw, 16px); color: var(--amber); }
+
+#gameOverOverlay {
+  display: none;                          /* game.js flips to flex */
+  position: fixed; inset: 0;
+  z-index: 21;
+  flex-direction: column;
+  align-items: center; justify-content: center;
+  gap: 20px;
+  padding: 24px;
+  text-align: center;
+  background:
+    radial-gradient(ellipse at 50% 20%, rgba(229, 56, 59, 0.12), transparent 55%),
+    linear-gradient(#1a0505, #060101);
+}
+#gameOverTitle {
+  font-size: clamp(28px, 6vw, 50px);
+  color: var(--blood);
+  text-shadow: 4px 4px 0 #2b0a0a, 8px 8px 0 rgba(0,0,0,0.4);
+}
+#gameOverStats { font-size: 11px; color: var(--dim); line-height: 2; letter-spacing: 1px; }
+
+#reviveHud {
+  display: none;                          /* game.js flips to block */
+  position: fixed; top: 88px; left: 50%;
+  transform: translateX(-50%);
+  z-index: 6;
+  background: var(--panel);
+  border: 3px solid var(--edge);
+  padding: 8px 16px;
+  font-size: 10px;
+  line-height: 1.7;
+  color: var(--amber);
+  text-align: center;
+  pointer-events: none;
+  white-space: nowrap;
+}
+#reviveHud .bar {
+  margin: 6px auto 4px; width: 180px; height: 10px;
+  background: rgba(0,0,0,0.5); border: 2px solid var(--edge);
+}
+#reviveHud .bar > div {
+  height: 100%; background: var(--acid);
+}
+
 /* ================= START SCREEN ===================================== */
 
 .screen {

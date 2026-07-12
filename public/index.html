@@ -14,8 +14,9 @@
   <div id="hud">
     <div id="crosshair"></div>
     <div id="waveBanner"></div>
-    <div id="topInfo">SCORE: <span id="score">0</span><br/>WAVE: <span id="wave">1</span><br/>PLAYERS: <span id="pcount">1</span><br/>LEFT: <span id="left">-</span></div>
+    <div id="topInfo">SCORE: <span id="score">0</span><br/>WAVE: <span id="wave">1</span><br/>PLAYERS: <span id="pcount">1</span><br/>LEFT: <span id="left">-</span><br/><span id="reviveCountWrap" style="display:none">REVIVE DEVICES: <span id="reviveCount">0</span></span></div>
     <div id="killfeed"></div>
+    <div id="reviveHud"></div>
     <div id="bottomCenter">
       <div id="shieldWrap"><div id="shieldBar"></div></div>
       <div id="healthWrap"><div id="healthLabel">HEALTH</div><div id="healthBarBg"><div id="healthBar"></div></div></div>
@@ -25,7 +26,17 @@
     <div id="scoreboard"><div class="sbTitle">SCOREBOARD</div><table><tbody></tbody></table></div>
   </div>
   <div id="damageFlash"></div>
-  <div id="deadOverlay">YOU DIED — RESPAWNING…</div>
+  <div id="deadOverlay"></div>
+  <div id="spectateOverlay">
+    <div id="spectateTitle">SPECTATING</div>
+    <div id="spectateName"></div>
+    <div class="tagline">Your team has to finish this run without you.</div>
+  </div>
+  <div id="gameOverOverlay">
+    <div id="gameOverTitle">GAME OVER</div>
+    <div id="gameOverStats"></div>
+    <button id="restartBtn" class="btn">BACK TO MENU</button>
+  </div>
 
   <!-- Start screen -->
   <div id="startScreen" class="screen">

@@ -334,20 +334,29 @@ function makeAvatar(color){
   g.userData.phase=Math.random()*6;
   scene.add(g); return g;
 }
-function makeZombie(kind){
+function makeZombie(kind, elite){
   const look = {
-    walker:   { skin:0x4fae3f, cloth:0x6b4a33, s:1.0  },
-    runner:   { skin:0x9fd44a, cloth:0x554433, s:0.85 },
-    spitter:  { skin:0xa4c639, cloth:0x3f4a1e, s:0.95 },
-    brute:    { skin:0x2f6b33, cloth:0x3a2a1c, s:1.45 },
-    leaper:   { skin:0x54c98a, cloth:0x2e4638, s:0.9  },
-    screamer: { skin:0x9b59b6, cloth:0x4a235a, s:1.0  },
-    exploder: { skin:0xd35400, cloth:0x6e2c00, s:0.95 },
-    warden:   { skin:0x8b1a1a, cloth:0x2b0f0f, s:1.9  },
+    walker:    { skin:0x4fae3f, cloth:0x6b4a33, s:1.0  },
+    runner:    { skin:0x9fd44a, cloth:0x554433, s:0.85 },
+    spitter:   { skin:0xa4c639, cloth:0x3f4a1e, s:0.95 },
+    brute:     { skin:0x2f6b33, cloth:0x3a2a1c, s:1.45 },
+    leaper:    { skin:0x54c98a, cloth:0x2e4638, s:0.9  },
+    screamer:  { skin:0x9b59b6, cloth:0x4a235a, s:1.0  },
+    exploder:  { skin:0xd35400, cloth:0x6e2c00, s:0.95 },
+    warden:    { skin:0x8b1a1a, cloth:0x2b0f0f, s:1.9  },
+    shielder:  { skin:0x6a7f99, cloth:0x1d2a3d, s:1.15 },
+    charger:   { skin:0xd2691e, cloth:0x5c1a0a, s:1.05 },
+    spawner:   { skin:0xb5c93c, cloth:0x4a4a1c, s:1.1  },
+    swarmling: { skin:0x8fd15c, cloth:0x6b5a3a, s:0.55 },
+    poisoner:  { skin:0x6fbf5e, cloth:0x3d1f52, s:0.95 },
+    burrower:  { skin:0x5a3d24, cloth:0x2e1f12, s:1.0  },
+    netter:    { skin:0xcfd6c9, cloth:0x3a3f38, s:0.9  },
+    colossus:  { skin:0x5c0f0f, cloth:0x150505, s:2.3  },
   }[kind] || { skin:0x4fae3f, cloth:0x6b4a33, s:1.0 };
   const g=new THREE.Group();
-  const body=new THREE.MeshLambertMaterial({color:look.cloth,flatShading:true});
-  const head=new THREE.MeshLambertMaterial({color:look.skin,flatShading:true});
+  const emissive = elite ? 0x8a6a00 : 0x000000;   // elites carry a faint gold glow
+  const body=new THREE.MeshLambertMaterial({color:look.cloth,flatShading:true,emissive});
+  const head=new THREE.MeshLambertMaterial({color:look.skin,flatShading:true,emissive});
   const torso=new THREE.Mesh(new THREE.BoxGeometry(0.6,0.9,0.35),body); torso.position.y=1.0;
   const hd=new THREE.Mesh(new THREE.BoxGeometry(0.45,0.45,0.45),head); hd.position.y=1.75;
   const legGeo=new THREE.BoxGeometry(0.22,0.7,0.25); legGeo.translate(0,-0.35,0);   // pivot at hip
@@ -358,11 +367,12 @@ function makeZombie(kind){
   const armR=new THREE.Mesh(armGeo,head); armR.position.set(0.4,1.45,0);
   armL.rotation.x=-1.2; armR.rotation.x=-1.2;   // arms-out shamble (shoulder pivot)
   g.add(torso,hd,legL,legR,armL,armR);
-  g.scale.setScalar(look.s);
+  g.scale.setScalar(look.s * (elite ? 1.12 : 1));
   const bar=makeBar(1.1); bar.position.y=2.3; g.add(bar);
   g.userData.bar=bar;
   g.userData.parts={legL,legR,armL,armR,torso};
   g.userData.kind=kind;
+  g.userData.elite=elite;
   g.userData.phase=Math.random()*6;
   scene.add(g); return g;
 }
@@ -476,9 +486,10 @@ socket.on('sync', (state)=>{
   const seen={};
   for(const e of state.enemies){
     seen[e.id]=true;
-    if(!enemyMeshes[e.id]) enemyMeshes[e.id]=makeZombie(e.kind);
+    if(!enemyMeshes[e.id]) enemyMeshes[e.id]=makeZombie(e.kind, e.elite);
     const g=enemyMeshes[e.id];
     setNetTarget(g, e.x, e.y, e.z, e.yaw);
+    g.visible = !e.burrowed;   // burrowers stay hidden until they erupt
     if(g.userData.bar) g.userData.bar.userData.draw(Math.max(0,e.hp)/(e.maxHp||e.hp||1));
   }
   for(const id in enemyMeshes){ if(!seen[id]){ scene.remove(enemyMeshes[id]); delete enemyMeshes[id]; } }
@@ -618,11 +629,11 @@ function flashDamage(){
   setTimeout(()=>f.style.background='rgba(255,0,0,0)',100);
 }
 socket.on('playerHit', (d)=>{ if(d.id===myId) flashDamage(); });
+socket.on('netted', (d)=>{ if(d.id===myId){ beep(200,0.3,'sine',0.1,-80); addFeed('NETTED \u2014 CAN\u2019T MOVE'); } });
 socket.on('enemyKilled', (d)=>{
   if(d.by===myId){
-    const pts={walker:10,runner:15,brute:30}[d.kind]||10;
-    addFeed('+'+pts+' '+(d.kind||'zombie')+' down');
-    hitmark(); beep(d.kind==='brute'?170:320,0.18,'sawtooth',0.12,-220);
+    addFeed('+'+(d.pts||10)+' '+(d.elite?'ELITE ':'')+(d.kind||'zombie')+' down');
+    hitmark(); beep(d.kind==='brute'||d.kind==='colossus'?170:320,0.18,'sawtooth',0.12,-220);
   }
   const g=enemyMeshes[d.id];
   if(g){ poof(g.position); scene.remove(g); delete enemyMeshes[d.id]; }

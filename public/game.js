@@ -94,10 +94,15 @@ function buildTerrain(){
 }
 
 // ---------- 3) LOCAL PLAYER + CONTROLS (client prediction) ----------
-const me = { x:25, y:0, z:25, yaw:0, pitch:0, vy:0, onGround:false, height:1.7, alive:true };
+const me = { x:25, y:0, z:25, yaw:0, pitch:0, vy:0, onGround:false, height:1.7, alive:true, permaDead:false };
 const keys = {}; const SPEED=6, JUMP=8, GRAVITY=22;
 addEventListener('keydown', e=>{
   keys[e.code]=true;
+  if(me.permaDead){
+    if(e.code==='ArrowLeft') cycleSpectate(-1);
+    if(e.code==='ArrowRight') cycleSpectate(1);
+    return;
+  }
   if(e.code==='KeyR') reload();
   if(e.code==='KeyG') throwGrenade();
   if(e.code==='KeyQ') drinkPotion();
@@ -113,7 +118,8 @@ document.addEventListener('mousemove', e=>{
 });
 
 function updatePlayer(dt){
-  if(!me.alive) return; // frozen while dead (server respawns us)
+  if(me.permaDead){ updateSpectateCamera(); return; }
+  if(!me.alive) return; // frozen while dead (awaiting a teammate's revive)
   const fwd  = new THREE.Vector3(-Math.sin(me.yaw),0,-Math.cos(me.yaw));
   const right= new THREE.Vector3( Math.cos(me.yaw),0,-Math.sin(me.yaw));
   const mv = new THREE.Vector3();
@@ -145,6 +151,27 @@ function updatePlayer(dt){
   socket.emit('move', { x:me.x, y:me.y, z:me.z, yaw:me.yaw });
 }
 
+function updateSpectateCamera(){
+  if(!lastState) return;
+  const ids=Object.keys(lastState.players).filter(id=>id!==myId && lastState.players[id].alive);
+  if(!ids.includes(spectateTargetId)) spectateTargetId=ids[0]||null;
+  const nameEl=document.getElementById('spectateName');
+  if(!spectateTargetId){ if(nameEl) nameEl.textContent='No teammates left to watch'; return; }
+  const p=lastState.players[spectateTargetId];
+  if(!p) return;
+  camera.position.set(p.x, p.y+me.height, p.z);
+  camera.rotation.order='YXZ';
+  camera.rotation.set(0, p.yaw, 0);
+  if(nameEl) nameEl.textContent = 'WATCHING '+(p.name||'Player').toUpperCase()+' \u00b7 \u2190/\u2192 to switch';
+}
+function cycleSpectate(dir){
+  if(!lastState) return;
+  const ids=Object.keys(lastState.players).filter(id=>id!==myId && lastState.players[id].alive);
+  if(!ids.length) return;
+  const idx=(ids.indexOf(spectateTargetId)+dir+ids.length)%ids.length;
+  spectateTargetId=ids[idx];
+}
+
 // ---------- 4) SHOOTING (send intent; recoil/ammo are local feel) ----------
 // Client mirror of the server's weapon table + feel (mag sizes, sounds, kick)
 const WEAPONS = {
@@ -158,10 +185,11 @@ const WEAPONS = {
 const WEAPON_ORDER = ['pistol','smg','shotgun','rifle','sniper','minigun'];
 const ITEMS = { grenade:{label:'GRND'}, potion:{label:'POTN'} };
 
-let myWeapons=['pistol'], myItems={grenade:0,potion:0};
+let myWeapons=['pistol'], myItems={grenade:0,potion:0,selfRevive:0};
 let slots=[], selected=0;
 let ammoBy={ pistol: WEAPONS.pistol.mag };
 let reloading=false, recoil=0, firing=false, lastFire=0, drinking=false;
+let spectateTargetId=null;
 
 function currentSlot(){ return slots[selected] || {type:'weapon', id:'pistol'}; }
 
@@ -285,6 +313,8 @@ const otherPlayers={};
 const roster={};   // id -> latest name (killfeed + nametags)
 let lastHp=100;    // detect hp drops so ANY damage flashes (zombies included)
 const enemyMeshes={};
+const cardMeshes={};
+const reviveStationMeshes=[];
 
 function makeBar(w){
   const cv=document.createElement('canvas'); cv.width=64; cv.height=10;
@@ -333,6 +363,24 @@ function makeAvatar(color){
   g.userData.parts={legL,legR,torso};
   g.userData.phase=Math.random()*6;
   scene.add(g); return g;
+}
+function buildReviveStations(stations){
+  for(const g of reviveStationMeshes) scene.remove(g);
+  reviveStationMeshes.length=0;
+  for(const s of (stations||[])){
+    const y=groundHeightAt(s.x, s.z);
+    const grp=new THREE.Group();
+    const pole=new THREE.Mesh(new THREE.CylinderGeometry(0.18,0.22,3.2,8),
+      new THREE.MeshLambertMaterial({color:0x8ae234, emissive:0x2a5a10, flatShading:true}));
+    pole.position.y=1.6;
+    const cap=new THREE.Mesh(new THREE.SphereGeometry(0.42,10,10),
+      new THREE.MeshLambertMaterial({color:0xffee44, emissive:0x8a7a10, flatShading:true}));
+    cap.position.y=3.3;
+    grp.add(pole,cap);
+    grp.position.set(s.x,y,s.z);
+    scene.add(grp);
+    reviveStationMeshes.push(grp);
+  }
 }
 function makeZombie(kind, elite){
   const look = {
@@ -420,6 +468,7 @@ function animateNet(dt){
 socket.on('init', (data)=>{
   myId=data.id; SEED=data.seed; WORLD=data.world; MAX_H=data.maxH;
   buildTerrain();
+  buildReviveStations(data.reviveStations);
   const spawn = data.players[data.id];   // server picked a random spawn for us
   if(spawn){ me.x=spawn.x; me.y=spawn.y; me.z=spawn.z; me.vy=0; }
   socket.emit('setName', document.getElementById('nameInput').value);
@@ -442,18 +491,33 @@ socket.on('sync', (state)=>{
     if(gearKey!==lastGearKey){
       lastGearKey=gearKey;
       myWeapons=(mine.weapons||['pistol']).slice();
-      myItems=Object.assign({grenade:0,potion:0}, mine.items||{});
+      myItems=Object.assign({grenade:0,potion:0,selfRevive:0}, mine.items||{});
       for(const wid of myWeapons) if(ammoBy[wid]==null) ammoBy[wid]=WEAPONS[wid].mag;
       rebuildHotbar(); updateAmmo();
     }
     document.getElementById('score').textContent = mine.score;
-    const wasAlive=me.alive; me.alive = mine.alive;
+    document.getElementById('reviveCount').textContent = myItems.selfRevive||0;
+    document.getElementById('reviveCountWrap').style.display = myItems.selfRevive>0 ? 'inline' : 'none';
+
+    const wasAlive=me.alive; me.alive = mine.alive; me.permaDead = !!mine.permaDead;
     if(!mine.alive){
       if(wasAlive) beep(220,0.7,'sawtooth',0.16,-190);
-      document.getElementById('deadOverlay').style.display='flex';
+      if(!mine.permaDead){
+        const multi = Object.keys(state.players).length > 1;
+        const myCard = multi ? (state.reviveCards||[]).find(c=>c.forId===myId) : null;
+        let msg = 'YOU DIED';
+        if(multi){
+          msg = myCard && myCard.carriedBy ? 'A TEAMMATE HAS YOUR CARD \u2014 GET TO A REVIVER'
+              : 'YOU DIED \u2014 A TEAMMATE MUST GRAB YOUR REVIVE CARD';
+        }
+        document.getElementById('deadOverlay').textContent = msg;
+        document.getElementById('deadOverlay').style.display='flex';
+      }
     }
     else if(!wasAlive){
       document.getElementById('deadOverlay').style.display='none';
+      document.getElementById('spectateOverlay').style.display='none';
+      document.getElementById('gameOverOverlay').style.display='none';
       me.x=mine.x; me.y=mine.y; me.z=mine.z; me.vy=0;
     }
   }
@@ -482,6 +546,33 @@ socket.on('sync', (state)=>{
     }
   }
   for(const id in otherPlayers){ if(!state.players[id]){ scene.remove(otherPlayers[id]); delete otherPlayers[id]; } }
+
+  // --- Revive cards: ground mesh while lying around, HUD while carried ---
+  const myCard = (state.reviveCards||[]).find(c=>c.carriedBy===myId);
+  const reviveHud = document.getElementById('reviveHud');
+  if(myCard){
+    const pct = Math.min(100, myCard.channelProgress/5*100).toFixed(0);
+    reviveHud.style.display='block';
+    reviveHud.innerHTML = 'CARRYING '+(myCard.forName||'TEAMMATE').toUpperCase()+'\u2019S REVIVE CARD<br/>GET TO A REVIVER'
+      + '<div class="bar"><div style="width:'+pct+'%"></div></div>'
+      + Math.min(5,myCard.channelProgress).toFixed(1)+'s / 5s';
+  } else {
+    reviveHud.style.display='none';
+  }
+  const cseen={};
+  for(const c of (state.reviveCards||[])){
+    if(c.carriedBy){ if(cardMeshes[c.id]){ scene.remove(cardMeshes[c.id]); delete cardMeshes[c.id]; } continue; }
+    cseen[c.id]=true;
+    if(!cardMeshes[c.id]){
+      const m=new THREE.Mesh(new THREE.BoxGeometry(0.42,0.58,0.06),
+        new THREE.MeshLambertMaterial({color:0xffee44, emissive:0x8a7a10, flatShading:true}));
+      scene.add(m); cardMeshes[c.id]=m;
+    }
+    const m=cardMeshes[c.id];
+    m.position.set(c.x, c.y+0.9, c.z);
+    m.rotation.y += 0.03;
+  }
+  for(const id in cardMeshes){ if(!cseen[id]){ scene.remove(cardMeshes[id]); delete cardMeshes[id]; } }
 
   const seen={};
   for(const e of state.enemies){
@@ -630,6 +721,27 @@ function flashDamage(){
 }
 socket.on('playerHit', (d)=>{ if(d.id===myId) flashDamage(); });
 socket.on('netted', (d)=>{ if(d.id===myId){ beep(200,0.3,'sine',0.1,-80); addFeed('NETTED \u2014 CAN\u2019T MOVE'); } });
+socket.on('gameOver', (d)=>{
+  if(d.id!==myId) return;
+  document.getElementById('deadOverlay').style.display='none';
+  const mine=lastState && lastState.players[myId];
+  document.getElementById('gameOverStats').textContent =
+    'FINAL SCORE: '+(mine?mine.score:0)+'   \u00b7   REACHED WAVE '+(lastState?lastState.wave:1);
+  document.getElementById('gameOverOverlay').style.display='flex';
+});
+socket.on('playerSpectating', (d)=>{
+  if(d.id!==myId) return;
+  document.getElementById('deadOverlay').style.display='none';
+  spectateTargetId=null;
+  document.getElementById('spectateOverlay').style.display='flex';
+});
+socket.on('selfRevived', (d)=>{ if(d.id===myId){ addFeed('SELF-REVIVE USED'); beep(500,0.3,'sine',0.15,140); } });
+socket.on('playerRevived', (d)=>{
+  if(d.id===myId) addFeed('BACK IN THE FIGHT');
+  else if(roster[d.id]) addFeed(roster[d.id]+' is back up');
+});
+socket.on('cardPickedUp', (d)=>{ addFeed((d.by===myId?'You':'A teammate')+' grabbed '+(d.forName||'a')+'\u2019s card'); });
+socket.on('cardReady', (d)=>{ addFeed((d.forName||'Teammate')+' will be back next wave'); beep(600,0.25,'sine',0.12,200); });
 socket.on('enemyKilled', (d)=>{
   if(d.by===myId){
     addFeed('+'+(d.pts||10)+' '+(d.elite?'ELITE ':'')+(d.kind||'zombie')+' down');
@@ -679,6 +791,7 @@ document.getElementById('playBtn').addEventListener('click', ()=>{
   canvas.requestPointerLock();
   running=true;
 });
+document.getElementById('restartBtn').addEventListener('click', ()=>location.reload());
 addEventListener('resize', ()=>{
   camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix();
   gunCamera.aspect=innerWidth/innerHeight; gunCamera.updateProjectionMatrix();

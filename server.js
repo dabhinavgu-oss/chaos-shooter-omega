@@ -14,9 +14,7 @@ const { EXTENDED_KINDS } = require("./game/enemies");
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server, {
-  cors: { origin: "*" }
-});
+const io = new Server(server, { cors: { origin: "*" } });
 
 const JWT_SECRET = process.env.JWT_SECRET || "your-secret-key-change-in-production";
 
@@ -24,27 +22,26 @@ app.use(express.json());
 app.use(express.static("public"));
 app.use(cookieParser());
 
-// Routes
 app.use("/api/auth", authRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/friends", friendRoutes);
 
-// Initialize managers
 const partyManager = new PartyManager();
 const friendsManager = new FriendsManager();
 const mapManager = new MapManager();
-
 mapManager.initializeMaps();
 
 // Game state
 const players = {};
 const enemies = [];
-const sessions = {}; // sessionId -> {mode, map, players}
+const sessions = {};
 let wave = 1, budget = 0, spawnTimer = 0, spawnInterval = 1.6;
 let waveActive = false, intermission = 0;
 const pickups = [];
 const reviveCards = [];
-const REVIVE_STATIONS = [{ x: 8, z: 8 }, { x: 80 - 8, z: 80 - 8 }];
+const blobs = [];
+const grenades = [];
+const REVIVE_STATIONS = [{ x: 8, z: 8 }, { x: 72, z: 72 }];
 const REVIVE_RADIUS = 3, REVIVE_CHANNEL_SEC = 5;
 
 const WORLD = 80, MAX_H = 8;
@@ -52,7 +49,7 @@ const SEED = Math.floor(Math.random() * 100000);
 const heightMap = [];
 const PLAYER_MAX_HP = 100, MAX_SHIELD = 50;
 
-// Procedural terrain
+// Terrain
 function hash(x, z) {
   let n = Math.sin((x + SEED) * 127.1 + (z + SEED) * 311.7) * 43758.5453;
   return n - Math.floor(n);
@@ -69,9 +66,7 @@ function smoothNoise(x, z) {
 }
 
 function terrainHeight(x, z) {
-  let h = smoothNoise(x * 0.12, z * 0.12) * 0.6
-        + smoothNoise(x * 0.25, z * 0.25) * 0.3
-        + smoothNoise(x * 0.5, z * 0.5) * 0.1;
+  let h = smoothNoise(x * 0.12, z * 0.12) * 0.6 + smoothNoise(x * 0.25, z * 0.25) * 0.3 + smoothNoise(x * 0.5, z * 0.5) * 0.1;
   return Math.floor(h * MAX_H) + 1;
 }
 
@@ -121,7 +116,7 @@ function edgeSpawn() {
 function pickKind() {
   const pool = [];
   for (const k in EXTENDED_KINDS) {
-    if (k === "warden" || k === "colossus" || EXTENDED_KINDS[k].intro > wave) continue;
+    if (EXTENDED_KINDS[k].intro > wave) continue;
     const w = EXTENDED_KINDS[k].intro === wave ? 3 : 1;
     for (let i = 0; i < w; i++) pool.push(k);
   }
@@ -131,8 +126,9 @@ function pickKind() {
 function makeEnemyOfKind(kind) {
   const { x, z } = edgeSpawn();
   const base = EXTENDED_KINDS[kind];
+  if (!base) return makeEnemyOfKind("walker");
   const grow = Math.max(0, wave - base.intro);
-  const isBoss = kind === "warden" || kind === "colossus" || kind === "omega" || kind === "worldeater" || base.boss;
+  const isBoss = base.boss;
   const elite = !isBoss && wave >= 5 && Math.random() < Math.min(0.22, 0.06 + wave * 0.01);
   const hp = Math.round((base.hp + (isBoss ? wave * 2 : 0)) * (1 + 0.06 * grow) * (elite ? 1.6 : 1));
   return {
@@ -143,8 +139,12 @@ function makeEnemyOfKind(kind) {
     dmg: Math.round(base.dmg * (elite ? 1.3 : 1)),
     pts: Math.round(base.pts * (elite ? 2 : 1)),
     reach: base.reach,
-    ...base,
+    frontDR: base.frontDR || 0,
+    dashSpeed: base.dashSpeed || 0,
+    poison: base.poison || 0,
     attackCd: 0, lungeCd: 0, dashCd: 2 + Math.random() * 2, spawnCd: 4 + Math.random() * 2,
+    burrowed: kind === "burrower",
+    staggerUntil: 0,
   };
 }
 
@@ -202,7 +202,6 @@ function hurtPlayer(pid, p, amount, by) {
     p.shield = 0;
     io.emit("playerKilled", { id: pid, by });
     if (by && players[by] && by !== pid) players[by].score += 50;
-
     const solo = Object.keys(players).length === 1;
     if (solo) {
       if (p.items && p.items.selfRevive > 0) {
@@ -224,6 +223,15 @@ function hurtPlayer(pid, p, amount, by) {
   }
 }
 
+function killEnemy(e, by) {
+  const i = enemies.indexOf(e);
+  if (i === -1 || e._dead) return;
+  e._dead = true;
+  enemies.splice(i, 1);
+  if (by && players[by]) players[by].score += e.pts;
+  io.emit("enemyKilled", { id: e.id, by, kind: e.kind, pts: e.pts, elite: e.elite || false });
+}
+
 function normalize(v) {
   const m = Math.hypot(v.x, v.y, v.z) || 1;
   return { x: v.x / m, y: v.y / m, z: v.z / m };
@@ -239,11 +247,10 @@ function raySphere(o, d, c, r) {
   return t >= 0 ? t : null;
 }
 
-// Socket.IO connections with authentication
+// Socket.IO
 io.on("connection", (socket) => {
   const token = socket.handshake.headers.authorization?.split(" ")[1];
   let userId = null;
-
   if (token) {
     try {
       const decoded = jwt.verify(token, JWT_SECRET);
@@ -266,9 +273,7 @@ io.on("connection", (socket) => {
     ...gearForWave(wave), lastShot: {},
   };
 
-  if (userId) {
-    friendsManager.setOnline(userId, socket.id);
-  }
+  if (userId) friendsManager.setOnline(userId, socket.id);
 
   socket.emit("init", {
     id: socket.id,
@@ -295,13 +300,11 @@ io.on("connection", (socket) => {
     const shooter = players[socket.id];
     if (!shooter || !shooter.alive) return;
     shooter.invulnUntil = 0;
-
     const w = WEAPONS[d.w] ? d.w : "pistol";
     if (!shooter.weapons.includes(w)) return;
     const now = Date.now();
     if (now - (shooter.lastShot[w] || 0) < WEAPONS[w].interval * 0.7) return;
     shooter.lastShot[w] = now;
-
     const spec = WEAPONS[w];
     const origin = { x: +d.x, y: +d.y, z: +d.z };
     const aim = normalize({ x: +d.dx, y: +d.dy, z: +d.dz });
@@ -320,7 +323,7 @@ io.on("connection", (socket) => {
       const RANGE = 110;
       let best = null, bestT = RANGE;
       for (const e of enemies) {
-        const t = raySphere(origin, dir, { x: e.x, y: e.y + 1.2, z: e.z }, e.kind === "warden" ? 1.4 : (e.kind === "brute" ? 1.15 : 0.9));
+        const t = raySphere(origin, dir, { x: e.x, y: e.y + 1.2, z: e.z }, 0.9);
         if (t !== null && t < bestT) { bestT = t; best = { type: "enemy", ref: e }; }
       }
       for (const id in players) {
@@ -340,13 +343,8 @@ io.on("connection", (socket) => {
         e.y = groundHeightAt(e.x, e.z);
         e.staggerUntil = now + 250;
         io.emit("enemyHit", { id: e.id, by: socket.id });
-        if (e.hp <= 0) {
-          enemies.splice(enemies.indexOf(e), 1);
-          if (shooter) shooter.score += e.pts;
-          io.emit("enemyKilled", { id: e.id, by: socket.id, kind: e.kind, pts: e.pts, elite: e.elite || false });
-        }
-      } else if (best.type === "player") {
-        // PvP damage
+        if (e.hp <= 0) killEnemy(e, socket.id);
+      } else {
         hurtPlayer(best.id, best.ref, spec.dmg * 10, socket.id);
       }
     }
@@ -358,12 +356,9 @@ io.on("connection", (socket) => {
   });
 
   socket.on("disconnect", () => {
-    if (userId) {
-      friendsManager.setOffline(userId);
-    }
+    if (userId) friendsManager.setOffline(userId);
     delete players[socket.id];
     io.emit("removePlayer", socket.id);
-    console.log("Disconnected:", socket.id);
   });
 });
 
@@ -441,6 +436,43 @@ setInterval(() => {
         }
         reviveCards.splice(i, 1);
       }
+    }
+  }
+
+  // ENEMY AI - THIS WAS MISSING!
+  const screamers = enemies.filter(e => e.kind === "screamer");
+  for (const e of [...enemies]) {
+    let target = null, targetId = null, best = Infinity;
+    for (const id in players) {
+      const p = players[id];
+      if (!p.alive) continue;
+      const dist = Math.hypot(p.x - e.x, p.z - e.z);
+      if (dist < best) { best = dist; target = p; targetId = id; }
+    }
+    if (!target) continue;
+    const staggered = e.staggerUntil && now < e.staggerUntil;
+    const dx = target.x - e.x, dz = target.z - e.z;
+    const dist = Math.hypot(dx, dz) || 1;
+    e.yaw = Math.atan2(dx, dz);
+    e.attackCd -= dt;
+    e.lungeCd -= dt;
+    e.dashCd -= dt;
+    e.spawnCd -= dt;
+
+    let spd = e.speed;
+    for (const s of screamers) {
+      if (s !== e && Math.hypot(s.x - e.x, s.z - e.z) < 6) { spd *= 1.4; break; }
+    }
+
+    if (dist > 1.2 && !staggered) {
+      e.x += (dx / dist) * spd * dt;
+      e.z += (dz / dist) * spd * dt;
+      e.y = groundHeightAt(e.x, e.z);
+    }
+    if (dist < (e.reach || 1.6) && e.attackCd <= 0 && !staggered && !target.invuln) {
+      e.attackCd = 1.0;
+      io.emit("enemyAttack", { id: e.id });
+      hurtPlayer(targetId, target, e.dmg || 8, "zombie");
     }
   }
 

@@ -202,23 +202,29 @@ function hurtPlayer(pid, p, amount, by) {
     p.shield = 0;
     io.emit("playerKilled", { id: pid, by });
     if (by && players[by] && by !== pid) players[by].score += 50;
-    const solo = Object.keys(players).length === 1;
+
+    const playerCount = Object.keys(players).length;
+    const solo = playerCount === 1;
+
     if (solo) {
+      // SINGLE PLAYER: Only revive with rare self-revive item, otherwise GAME OVER
       if (p.items && p.items.selfRevive > 0) {
         p.items.selfRevive--;
         revivePlayer(pid, Math.round(PLAYER_MAX_HP * 0.5));
         io.emit("selfRevived", { id: pid });
       } else {
         p.permaDead = true;
-        io.emit("gameOver", { id: pid });
+        io.emit("gameOver", { id: pid, reason: "You died. No revival items available." });
       }
     } else {
+      // MULTIPLAYER: Drop revive card
       reviveCards.push({
         id: Math.random().toString(36).slice(2),
         forId: pid, forName: p.name,
         x: p.x, y: p.y, z: p.z,
         carriedBy: null, channelProgress: 0, ready: false,
       });
+      io.emit("playerDown", { id: pid, name: p.name });
     }
   }
 }
@@ -230,6 +236,17 @@ function killEnemy(e, by) {
   enemies.splice(i, 1);
   if (by && players[by]) players[by].score += e.pts;
   io.emit("enemyKilled", { id: e.id, by, kind: e.kind, pts: e.pts, elite: e.elite || false });
+  
+  // Rare drop: self-revive item in singleplayer
+  const solo = Object.keys(players).length === 1;
+  if (solo && Math.random() < 0.02) {
+    pickups.push({
+      id: Math.random().toString(36).slice(2),
+      x: e.x, y: e.y, z: e.z,
+      kind: "revive",
+      expiresAt: Date.now() + 25000,
+    });
+  }
 }
 
 function normalize(v) {
@@ -267,7 +284,7 @@ io.on("connection", (socket) => {
     x: s.x, y: s.y, z: s.z, yaw: 0,
     hp: PLAYER_MAX_HP, shield: 0, score: 0,
     name: `Player${Math.random().toString(36).slice(7)}`, color: "#1e90ff",
-    alive: true, permaDead: false,
+    alive: true, permaDead: false, spectating: false,
     invulnUntil: Date.now() + 2500, invuln: true,
     userId,
     ...gearForWave(wave), lastShot: {},
@@ -367,7 +384,7 @@ const TICK = 1000 / 30, dt = 1 / 30;
 setInterval(() => {
   const now = Date.now();
 
-  // Revive cards
+  // Revive cards (MULTIPLAYER ONLY)
   for (const card of reviveCards) {
     if (card.ready) continue;
     if (card.carriedBy == null) {
@@ -401,11 +418,27 @@ setInterval(() => {
 
   for (const id in players) { const p = players[id]; p.invuln = p.alive && now < p.invulnUntil; }
 
-  const alivePlayers = Object.values(players).filter(p => p.alive).length;
-  if (alivePlayers === 0 && Object.keys(players).length > 0) {
-    enemies.length = 0; waveActive = false; intermission = 0;
-    reviveCards.length = 0;
-    for (const id in players) revivePlayer(id);
+  const alivePlayers = Object.values(players).filter(p => p.alive && !p.permaDead).length;
+  const totalPlayers = Object.keys(players).length;
+
+  // Check for full wipe or game over
+  if (alivePlayers === 0 && totalPlayers > 0) {
+    // All players dead/permadead - check if multiplayer or singleplayer
+    const isSingleplayer = totalPlayers === 1;
+    if (isSingleplayer) {
+      // Single player - broadcast game over
+      io.emit("gameOver", { reason: "Game Over! You died without revival items." });
+      enemies.length = 0; waveActive = false; intermission = 0;
+      reviveCards.length = 0;
+    } else {
+      // Multiplayer - all dead means wave reset/team wipe
+      enemies.length = 0; waveActive = false; intermission = 0;
+      reviveCards.length = 0;
+      for (const id in players) {
+        const p = players[id];
+        if (!p.permaDead) revivePlayer(id);
+      }
+    }
   } else if (intermission > 0) {
     intermission -= dt;
     if (intermission <= 0) {
@@ -418,7 +451,7 @@ setInterval(() => {
     waveActive = true; budget = waveBudget(wave); spawnTimer = spawnInterval;
   } else {
     spawnTimer += dt;
-    const cap = Math.min(24, 10 + Math.floor(wave / 2)) + Object.keys(players).length * 2;
+    const cap = Math.min(24, 10 + Math.floor(wave / 2)) + totalPlayers * 2;
     if (budget > 0 && spawnTimer > spawnInterval && enemies.length < cap) {
       spawnTimer = 0; budget--;
       enemies.push(makeEnemy());
@@ -432,14 +465,18 @@ setInterval(() => {
           revivePlayer(card.forId);
         } else {
           const dead = players[card.forId];
-          if (dead) { dead.permaDead = true; io.emit("playerSpectating", { id: card.forId }); }
+          if (dead) {
+            dead.permaDead = true;
+            dead.spectating = true;
+            io.emit("playerSpectating", { id: card.forId });
+          }
         }
         reviveCards.splice(i, 1);
       }
     }
   }
 
-  // ENEMY AI - THIS WAS MISSING!
+  // ENEMY AI
   const screamers = enemies.filter(e => e.kind === "screamer");
   for (const e of [...enemies]) {
     let target = null, targetId = null, best = Infinity;
@@ -473,6 +510,23 @@ setInterval(() => {
       e.attackCd = 1.0;
       io.emit("enemyAttack", { id: e.id });
       hurtPlayer(targetId, target, e.dmg || 8, "zombie");
+    }
+  }
+
+  // Pickups (revive items and health)
+  for (let i = pickups.length - 1; i >= 0; i--) {
+    const pk = pickups[i];
+    if (now > pk.expiresAt) { pickups.splice(i, 1); continue; }
+    for (const id in players) {
+      const p = players[id];
+      if (!p.alive) continue;
+      if (Math.hypot(p.x - pk.x, p.z - pk.z) < 1.2 && Math.abs(p.y - pk.y) < 2) {
+        if (pk.kind === "health") p.hp = Math.min(PLAYER_MAX_HP, p.hp + 30);
+        if (pk.kind === "revive") p.items.selfRevive = (p.items.selfRevive || 0) + 1;
+        io.emit("pickup", { id: pk.id, by: id, kind: pk.kind });
+        pickups.splice(i, 1);
+        break;
+      }
     }
   }
 

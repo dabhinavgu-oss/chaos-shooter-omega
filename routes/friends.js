@@ -21,14 +21,28 @@ const verifyToken = (req, res, next) => {
 router.post('/request', verifyToken, async (req, res) => {
   const { targetUsername } = req.body;
   try {
-    const target = await dbGet('SELECT id FROM users WHERE username = ?', [targetUsername]);
+    const target = await dbGet('SELECT id, username FROM users WHERE username = ?', [targetUsername]);
     if (!target) return res.status(404).json({ error: 'User not found' });
-    
+    if (Number(target.id) === Number(req.userId)) {
+      return res.status(400).json({ error: 'You cannot send a friend request to yourself.' });
+    }
+
+    const existing = await dbGet(
+      `SELECT user_id, friend_id, status FROM friends
+       WHERE (user_id = ? AND friend_id = ?) OR (user_id = ? AND friend_id = ?)`,
+      [req.userId, target.id, target.id, req.userId]
+    );
+    if (existing) {
+      if (existing.status === 'accepted') return res.status(409).json({ error: 'You are already friends.' });
+      if (Number(existing.user_id) === Number(target.id)) return res.status(409).json({ error: 'That player already sent you a friend request.' });
+      return res.status(409).json({ error: 'Friend request already sent.' });
+    }
+
     await dbRun(
-      'INSERT OR IGNORE INTO friends (user_id, friend_id, status) VALUES (?, ?, "pending")',
+      'INSERT INTO friends (user_id, friend_id, status) VALUES (?, ?, "pending")',
       [req.userId, target.id]
     );
-    res.json({ success: true });
+    res.json({ success: true, fromUserId: req.userId, fromUsername: targetUsername, toUserId: target.id, toUsername: target.username });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -38,9 +52,18 @@ router.post('/request', verifyToken, async (req, res) => {
 router.post('/accept', verifyToken, async (req, res) => {
   const { fromUserId } = req.body;
   try {
+    const pending = await dbGet(
+      'SELECT user_id FROM friends WHERE user_id = ? AND friend_id = ? AND status = "pending"',
+      [fromUserId, req.userId]
+    );
+    if (!pending) return res.status(404).json({ error: 'Friend request not found.' });
     await dbRun(
       'UPDATE friends SET status = "accepted" WHERE user_id = ? AND friend_id = ?',
       [fromUserId, req.userId]
+    );
+    await dbRun(
+      'INSERT OR IGNORE INTO friends (user_id, friend_id, status) VALUES (?, ?, "accepted")',
+      [req.userId, fromUserId]
     );
     res.json({ success: true });
   } catch (err) {
@@ -69,8 +92,8 @@ router.get('/pending', verifyToken, async (req, res) => {
     const pending = await dbAll(
       `SELECT f.user_id as id, u.username FROM friends f
        JOIN users u ON f.user_id = u.id
-       WHERE f.friend_id = ? AND f.status = "pending"`,
-      [req.userId]
+       WHERE f.friend_id = ? AND f.status = "pending" AND f.user_id != ?`,
+      [req.userId, req.userId]
     );
     res.json(pending);
   } catch (err) {

@@ -1,0 +1,74 @@
+/* Chaos Shooter Omega home/lobby layer. The existing game client remains the shooter; this file owns the menu. */
+(() => {
+  const TOKEN_KEY = 'cso_token';
+  const USER_KEY = 'cso_user';
+  const MODE_KEY = 'cso_mode';
+  const MAP_KEY = 'cso_map';
+  const PARTY_KEY = 'cso_party';
+  const maps = [
+    ['delta','Crimson Delta'],['frost','Frost Haven'],['inferno','Inferno Peaks'],['void','Void Canyon'],
+    ['sanctuary','Sanctuary'],['neon','Neon Foundry'],['ruins','Ancient Ruins'],['harbor','Storm Harbor'],
+    ['mine','Blackrock Mine'],['lab','Omega Lab'],['swamp','Rotten Swamp'],['sky','Sky Citadel']
+  ];
+  const modes = [
+    ['z1','ZOMBIES','1 VS ZOMBIE',1],['z2','ZOMBIES','2 VS ZOMBIE',2],['z3','ZOMBIES','3 VS ZOMBIE',3],['z4','ZOMBIES','4 VS ZOMBIE',4],
+    ['p1','PVP','1V1',2],['p2','PVP','2V2',4],['p3','PVP','3V3',6],['p4','PVP','4V4',8]
+  ];
+  const state = { user: JSON.parse(localStorage.getItem(USER_KEY)||'null'), token: localStorage.getItem(TOKEN_KEY)||'', tab:'home', mode:localStorage.getItem(MODE_KEY)||'z1', map:localStorage.getItem(MAP_KEY)||'delta', party:JSON.parse(localStorage.getItem(PARTY_KEY)||'null'), friends:[], pending:[] };
+  const $ = id => document.getElementById(id);
+  const api = async (url, options={}) => {
+    options.headers = Object.assign({'Content-Type':'application/json'}, options.headers||{}, state.token ? {Authorization:'Bearer '+state.token}:{});
+    const r = await fetch(url, options); let data={}; try{data=await r.json();}catch{}
+    if(!r.ok) throw new Error(data.error||'Request failed'); return data;
+  };
+  const esc = s => String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  function notify(text){
+    let box=$('csoNotifications'); if(!box){box=document.createElement('div');box.id='csoNotifications';document.body.appendChild(box);}
+    const n=document.createElement('div'); n.className='csoNotice'; n.textContent=text; box.appendChild(n); setTimeout(()=>n.remove(),3500);
+  }
+  function css(){
+    if($('csoHomeCss')) return;
+    const s=document.createElement('style'); s.id='csoHomeCss'; s.textContent=`
+      #startScreen.csoHome{display:block;overflow:auto;text-align:left;padding:28px 34px;background:linear-gradient(#0d180a,#050904)}
+      .csoShell{max-width:1180px;margin:0 auto}.csoBrand{color:#8ae234;font-size:clamp(24px,4vw,44px);line-height:1.1;text-shadow:4px 4px 0 #1d4310;margin:8px 0 22px}.csoNav{display:flex;justify-content:flex-end;gap:8px;position:sticky;top:0;z-index:3}.csoNav button,.csoTab,.csoMode,.csoSmall{font:inherit;color:#eaffdd;background:#15230f;border:3px solid #355b25;padding:11px 14px;cursor:pointer}.csoNav button.active,.csoTab.active{background:#57a639}.csoGrid{display:grid;grid-template-columns:1.4fr .8fr;gap:18px}.csoPanel{background:rgba(8,12,6,.82);border:3px solid #2c5d1c;box-shadow:5px 5px 0 #000;padding:18px}.csoPanel h2{margin:0 0 14px;color:#ffee44;font-size:16px}.csoModes{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}.csoMode{min-height:88px;text-align:left}.csoMode small{display:block;color:#8ae234;font-size:9px;margin-bottom:10px}.csoMode b{font-size:11px}.csoMode.selected{outline:3px solid #ffee44;background:#2b451f}.csoMapGrid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.csoMap{padding:12px;background:#10190c;border:2px solid #355b25;color:#b8c9a6;cursor:pointer;font:inherit;font-size:9px;text-align:left}.csoMap.selected{border-color:#ffee44;color:#fff}.csoRow{display:flex;gap:8px;flex-wrap:wrap}.csoInput{font:inherit;background:#0c120a;color:#fff;border:3px solid #3b4a2f;padding:11px;width:100%;max-width:360px}.csoList{display:flex;flex-direction:column;gap:8px}.csoItem{border:2px solid #355b25;padding:10px;color:#b8c9a6;display:flex;justify-content:space-between;gap:8px;align-items:center}.online{color:#8ae234}.offline{color:#777}.csoLogin{max-width:520px;margin:8vh auto;text-align:center}.csoLogin .csoInput{max-width:none;margin:5px 0}.csoLogin h1{color:#8ae234}.csoMuted{color:#8a9b7b;font-size:9px;line-height:1.8}.csoParty{border-left:4px solid #8ae234;padding-left:12px}.csoVotes{font-size:9px;color:#ffee44}.csoReward{font-size:10px;color:#8ae234;line-height:2}.csoDanger{background:#5b1f1f!important;border-color:#8e3030!important}.csoNotice{background:#10190c;border:3px solid #ffee44;color:#fff;padding:12px 14px;box-shadow:4px 4px 0 #000;pointer-events:auto}.csoNotice{animation:csoIn .15s steps(3)}@keyframes csoIn{from{transform:translateX(30px);opacity:0}}#csoNotifications{position:fixed;right:16px;top:16px;z-index:1000;display:flex;flex-direction:column;gap:8px;max-width:360px}.csoFooter{margin-top:16px;color:#718063;font-size:8px}@media(max-width:850px){.csoGrid{grid-template-columns:1fr}.csoModes{grid-template-columns:repeat(2,1fr)}.csoMapGrid{grid-template-columns:repeat(2,1fr)}#startScreen.csoHome{padding:20px 12px}}
+    `; document.head.appendChild(s);
+  }
+  function setMode(m){ state.mode=m; localStorage.setItem(MODE_KEY,m); renderHome(); }
+  function selectedMode(){return modes.find(x=>x[0]===state.mode)||modes[0]}
+  async function loadSocial(){
+    if(!state.token) return;
+    try{state.friends=await api('/api/friends/list');}catch{state.friends=[]}
+    try{state.pending=await api('/api/friends/pending');}catch{state.pending=[]}
+  }
+  function loginScreen(register=false){
+    const root=$('startScreen'); root.className='screen csoHome'; root.innerHTML=`<div class="csoShell csoLogin"><div class="csoBrand">CHAOS SHOOTER<br>OMEGA</div><div class="csoPanel"><h2>${register?'REGISTER':'LOGIN'}</h2><input id="authName" class="csoInput" placeholder="Username" maxlength="16" ${register?'':'style="display:none"'}><input id="authEmail" class="csoInput" placeholder="Email"><input id="authPass" class="csoInput" placeholder="Password" type="password"><div class="csoRow" style="justify-content:center;margin-top:10px"><button id="authGo" class="csoTab active">${register?'REGISTER':'LOGIN'}</button><button id="authSwitch" class="csoTab">${register?'LOGIN':'REGISTER'}</button></div><p id="authError" class="csoMuted"></p></div><p class="csoMuted">Your account keeps your profile, friends and rewards.</p></div>`;
+    $('authGo').onclick=async()=>{try{const body=register?{username:$('authName').value,email:$('authEmail').value,password:$('authPass').value}:{email:$('authEmail').value,password:$('authPass').value};const d=await api('/api/auth/'+(register?'register':'login'),{method:'POST',body:JSON.stringify(body)});state.token=d.token;state.user={id:d.userId,username:d.username};localStorage.setItem(TOKEN_KEY,state.token);localStorage.setItem(USER_KEY,JSON.stringify(state.user));notify('Welcome '+d.username+'!');renderHome();}catch(e){$('authError').textContent=e.message}};
+    $('authSwitch').onclick=()=>loginScreen(!register);
+  }
+  function renderHome(){
+    css(); const root=$('startScreen'); root.className='screen csoHome'; if(!state.user){loginScreen(false);return;}
+    const m=selectedMode(); const party=state.party;
+    root.innerHTML=`<div class="csoShell"><div class="csoNav"><button id="friendsTab">FRIENDS ${state.pending.length?'('+state.pending.length+')':''}</button><button id="profileTab">PROFILE</button><button id="logoutBtn" class="csoDanger">LOG OUT</button></div><div class="csoBrand">CHAOS SHOOTER OMEGA</div><div class="csoGrid"><main><div class="csoPanel"><h2>CHOOSE MODE</h2><div class="csoModes">${modes.map(x=>`<button class="csoMode ${x[0]===state.mode?'selected':''}" data-mode="${x[0]}"><small>${x[1]}</small><b>${x[2]}</b><br><span class="csoMuted">${x[1]==='PVP'?'NO FRIENDLY FIRE':'CO-OP WAVES'}</span></button>`).join('')}</div></div><div class="csoPanel" style="margin-top:18px"><h2>MAP VOTE</h2><div class="csoMapGrid">${maps.map((x,i)=>`<button class="csoMap ${x[0]===state.map?'selected':''}" data-map="${x[0]}">${i+1}. ${x[1]}<div class="csoVotes">${x[0]===state.map?'YOUR VOTE':''}</div></button>`).join('')}</div><p class="csoMuted">Everyone votes. If tied, the first map to reach the tied vote count wins.</p></div></main><aside><div class="csoPanel"><h2>PARTY</h2>${party?`<div class="csoParty"><b>${esc(party.name)}</b><p class="csoMuted">${party.members.length}/4 members · ${party.mode==='pvp'?'VS PLAYERS':'VS ZOMBIES'}</p>${party.members.map(n=>`<div class="csoItem"><span>${esc(n.name)}</span><span class="${n.ready?'online':'offline'}">${n.ready?'READY':'NOT READY'}</span></div>`).join('')}<div class="csoRow" style="margin-top:10px"><button id="readyBtn" class="csoTab">${party.ready?'UNREADY':'READY UP'}</button>${party.host?'<button id="partyMode" class="csoTab">HOST: '+(party.mode==='pvp'?'PVP':'ZOMBIES')+'</button>':''}</div></div>`:`<p class="csoMuted">Name your party before inviting friends. Up to 4 players.</p><input id="partyName" class="csoInput" placeholder="Party name" maxlength="24"><button id="createParty" class="csoTab active" style="margin-top:8px">CREATE PARTY</button>`}</div><div class="csoPanel" style="margin-top:18px"><h2>REWARD TRACK</h2><div class="csoReward">EVERY WIN → REWARD<br>Wave clears also grant gear.<br>Keep playing to unlock more.</div></div><div class="csoPanel" style="margin-top:18px"><h2>SELECTED</h2><b>${m[1]} · ${m[2]}</b><p class="csoMuted">${m[1]==='PVP'?'Friendly fire is disabled.':'Revive rules: solo = rare zombie self-revive device only; 2–4 players = revive card + 5 second rebooter + respawn after wave.'}</p><button id="playSelected" class="csoTab active" style="width:100%;padding:16px">PLAY</button></div></aside></div><div class="csoFooter">Logged in as ${esc(state.user.username)} · Friends, profile and notifications are in the top-right tabs.</div></div>`;
+    root.querySelectorAll('[data-mode]').forEach(b=>b.onclick=()=>setMode(b.dataset.mode)); root.querySelectorAll('[data-map]').forEach(b=>b.onclick=()=>{state.map=b.dataset.map;localStorage.setItem(MAP_KEY,state.map);notify('Map vote: '+b.textContent.replace(/\d+\. /,''));renderHome();});
+    $('friendsTab').onclick=renderFriends; $('profileTab').onclick=renderProfile; $('logoutBtn').onclick=()=>{localStorage.removeItem(TOKEN_KEY);localStorage.removeItem(USER_KEY);state.user=null;state.token='';renderHome()};
+    if($('createParty')) $('createParty').onclick=()=>{const name=$('partyName').value.trim();if(!name)return notify('Name your party first.');state.party={name,members:[{name:state.user.username,ready:true}],host:true,ready:true,mode:'zombies'};localStorage.setItem(PARTY_KEY,JSON.stringify(state.party));notify('Party created. Invite friends from Friends.');renderHome()};
+    if($('readyBtn')) $('readyBtn').onclick=()=>{state.party.ready=!state.party.ready;state.party.members[0].ready=state.party.ready;localStorage.setItem(PARTY_KEY,JSON.stringify(state.party));renderHome()};
+    if($('partyMode')) $('partyMode').onclick=()=>{state.party.mode=state.party.mode==='pvp'?'zombies':'pvp';localStorage.setItem(PARTY_KEY,JSON.stringify(state.party));notify('Party mode changed.');renderHome()};
+    $('playSelected').onclick=()=>{localStorage.setItem(MODE_KEY,state.mode);const old=$('playBtn');if(old){old.style.display='none';old.click();}else{root.style.display='none';document.body.requestPointerLock?.()};};
+  }
+  function renderFriends(){
+    css();const root=$('startScreen');root.className='screen csoHome';root.innerHTML=`<div class="csoShell"><div class="csoNav"><button id="homeTab" class="csoTab">HOME</button><button class="csoTab active">FRIENDS</button><button id="profileTab" class="csoTab">PROFILE</button></div><div class="csoBrand">FRIENDS</div><div class="csoGrid"><div class="csoPanel"><h2>ONLINE / FRIENDS</h2><div class="csoList">${state.friends.length?state.friends.map(f=>`<div class="csoItem"><span>${esc(f.username)}</span><span class="online">ONLINE / FRIEND</span><span><button class="csoSmall" data-quick="${f.username}">1V1</button><button class="csoSmall" data-invite="${f.username}">INVITE</button></span></div>`).join(''):'<p class="csoMuted">No friends yet.</p>'}</div></div><div class="csoPanel"><h2>FRIEND REQUEST</h2><input id="friendName" class="csoInput" placeholder="Username"><button id="sendFriend" class="csoTab active" style="margin-top:8px">SEND REQUEST</button><h2 style="margin-top:24px">PENDING</h2><div class="csoList">${state.pending.length?state.pending.map(f=>`<div class="csoItem"><span>${esc(f.username)}</span><button class="csoSmall" data-accept="${f.id}">ACCEPT</button></div>`).join(''):'<p class="csoMuted">No pending requests.</p>'}</div></div></div></div>`;
+    $('homeTab').onclick=renderHome;$('profileTab').onclick=renderProfile;$('sendFriend').onclick=async()=>{try{await api('/api/friends/request',{method:'POST',body:JSON.stringify({targetUsername:$('friendName').value.trim()})});notify('Friend request sent.');await loadSocial();renderFriends()}catch(e){notify(e.message)}};
+    root.querySelectorAll('[data-accept]').forEach(b=>b.onclick=async()=>{try{await api('/api/friends/accept',{method:'POST',body:JSON.stringify({fromUserId:Number(b.dataset.accept)})});notify('Friend request accepted.');await loadSocial();renderFriends()}catch(e){notify(e.message)}});
+    root.querySelectorAll('[data-invite]').forEach(b=>b.onclick=()=>{if(!state.party)notify('Create and name a party first.');else notify('Invite ready for '+b.dataset.invite+' — party networking is waiting for the live lobby server.');});
+    root.querySelectorAll('[data-quick]').forEach(b=>b.onclick=()=>{state.mode='p1';localStorage.setItem(MODE_KEY,'p1');notify('1v1 selected against '+b.dataset.quick);renderHome()});
+  }
+  function renderProfile(){
+    css();const root=$('startScreen');root.className='screen csoHome';root.innerHTML=`<div class="csoShell"><div class="csoNav"><button id="homeTab" class="csoTab">HOME</button><button id="friendsTab" class="csoTab">FRIENDS</button><button class="csoTab active">PROFILE</button></div><div class="csoBrand">PROFILE</div><div class="csoPanel" style="max-width:700px"><h2>${esc(state.user.username)}</h2><p class="csoMuted">ACCOUNT ID: ${esc(state.user.id)}</p><div class="csoReward">WINS: ${Number(localStorage.getItem('cso_wins')||0)}<br>REWARDS: ${Number(localStorage.getItem('cso_rewards')||0)}</div><p class="csoMuted">Your profile is tied to your login. Match rewards can be added to this track as the game reports completed wins.</p></div></div>`;$('homeTab').onclick=renderHome;$('friendsTab').onclick=renderFriends;
+  }
+  function start(){
+    css(); loadSocial().then(renderHome);
+    const play=$('playBtn'); if(play) play.style.display='none';
+  }
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',start); else start();
+})();

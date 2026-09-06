@@ -49,8 +49,6 @@ const WEAPONS = {
   minigun: { dmg: 1, interval: 60,   pellets: 1, spread: 0.05, knock: 0.2  },
 };
 
-const EXTENDED_KINDS = require("./game/enemies").EXTENDED_KINDS;
-
 // Terrain generator
 function createTerrainForSeed(seed) {
   const heightMap = [];
@@ -265,8 +263,11 @@ io.on("connection", (socket) => {
     const shooter = session.players[socket.id];
     if (!shooter || !shooter.alive) return;
     shooter.invulnUntil = 0;
-    const w = WEAPONS[d.w] ? d.w : "pistol";
+    
+    // Validate weapon type is a string
+    const w = typeof d.w === 'string' && WEAPONS[d.w] ? d.w : "pistol";
     if (!shooter.weapons.includes(w)) return;
+    
     const now = Date.now();
     if (now - (shooter.lastShot[w] || 0) < WEAPONS[w].interval * 0.7) return;
     shooter.lastShot[w] = now;
@@ -327,13 +328,16 @@ io.on("connection", (socket) => {
   socket.on("disconnect", () => {
     if (userId) friendsManager.setOffline(userId);
     delete session.players[socket.id];
-    delete gameSessions[session.id];
+    // Mark session for cleanup - it will be cleared by the game loop
+    session.gameOver = true;
   });
 
   // Game loop for this session @ 30Hz
   const sessionTick = setInterval(() => {
+    // Check if session still exists and is not marked for cleanup
     if (session.gameOver || !gameSessions[session.id]) {
       clearInterval(sessionTick);
+      delete gameSessions[session.id];
       return;
     }
 
@@ -352,6 +356,7 @@ io.on("connection", (socket) => {
       session.gameOver = true;
       socket.emit("gameOver", { reason: "Game Over! You died without revival items." });
       clearInterval(sessionTick);
+      delete gameSessions[session.id];
       return;
     } else if (!session.waveActive) {
       session.waveActive = true;

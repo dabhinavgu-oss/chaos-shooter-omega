@@ -1,4 +1,4 @@
-/* Map boot layer: passes the selected lobby map to the server and makes PLAY load it. */
+/* Map boot layer: passes the selected lobby map to the server. */
 (() => {
   const originalIo = window.io;
   if (typeof originalIo === 'function') {
@@ -11,13 +11,6 @@
     Object.keys(originalIo).forEach(k => { try { window.io[k] = originalIo[k]; } catch {} });
   }
 
-  document.addEventListener('click', (e) => {
-    const btn = e.target.closest?.('#playSelected');
-    if (!btn) return;
-    const selected = document.querySelector('.csoMap.selected');
-    if (selected?.dataset?.map) localStorage.setItem('cso_map', selected.dataset.map);
-    e.preventDefault();
-    e.stopImmediatePropagation();
-    window.setTimeout(() => window.location.reload(), 0);
-  }, true);
+  // The lobby's PLAY button already calls the original game start handler.
+  // Do not intercept it or reload the page: that used to make PLAY appear broken.
 })();

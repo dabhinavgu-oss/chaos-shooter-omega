@@ -1,5 +1,6 @@
-/* Integration test bot: plays the game headlessly for ~28s and verifies
-   the new wave system, hit feedback events, and zombie separation. */
+/* Integration test bot: plays the game headlessly for ~32s and verifies
+   the wave system, hit feedback, loot, projectiles, and map geometry contracts. */
+const fs = require("fs");
 const { io } = require("socket.io-client");
 const socket = io("http://localhost:3000");
 
@@ -9,6 +10,24 @@ let sawPickupInSync = false, gotPickup = false, enemyFieldsOk = true;
 let gotReward = false, hasGear = false, hasMaxHp = true, hasProjKeys = false;
 let minPairDist = Infinity, nanSeen = false;
 const pos = { x: 25, z: 25 };
+
+// Map-geometry contract checks. The headless bot cannot render Three.js, so these
+// verify that the actual map builder still contains the required door openings
+// and four-corner outposts instead of silently losing them during refactors.
+let mapWorld = "";
+try { mapWorld = fs.readFileSync("public/map-world.js", "utf8"); } catch (_) {}
+const mapGeometryChecks = {
+  "map has building door openings": /function building\([\s\S]*?if \(doorAxis === 'x'\)/.test(mapWorld),
+  "military base has four outposts": (() => {
+    const m = mapWorld.match(/function militaryBase\(\)\s*\{([\s\S]*?)\n\s*\}/);
+    return !!m && (m[1].match(/tower\(/g) || []).length >= 4;
+  })(),
+  "sniper outposts has four towers": (() => {
+    const m = mapWorld.match(/function sniperOutposts\(\)\s*\{([\s\S]*?)\n\s*\}/);
+    return !!m && (m[1].match(/tower\(/g) || []).length >= 4;
+  })(),
+  "outposts include climbable stair geometry": /for\(let i=0;i<4;i\+\+\) box\(x-2\.0\+i\*0\.5/.test(mapWorld),
+};
 
 socket.on("init", (d) => {
   myId = d.id;
@@ -30,7 +49,6 @@ socket.on("sync", (s) => {
   const meP = s.players[myId];
   if (meP && Array.isArray(meP.weapons) && "shield" in meP && meP.items) hasGear = true;
   if (s.wave >= 2) sawWave2 = true;
-  // track how tightly zombies pack (only when 2+ exist)
   for (let i = 0; i < s.enemies.length; i++) {
     const a = s.enemies[i];
     if (Number.isNaN(a.x) || Number.isNaN(a.z) || Number.isNaN(a.y)) nanSeen = true;
@@ -41,7 +59,6 @@ socket.on("sync", (s) => {
   }
 });
 
-// Play: hold position, aim at the nearest zombie, fire 4x/sec. Kite if crowded.
 setInterval(() => {
   if (!myId || !lastSync) return;
   const me = lastSync.players[myId];
@@ -51,14 +68,13 @@ setInterval(() => {
     const near = es.reduce((a, b) =>
       Math.hypot(a.x - pos.x, a.z - pos.z) < Math.hypot(b.x - pos.x, b.z - pos.z) ? a : b);
     const nd = Math.hypot(near.x - pos.x, near.z - pos.z);
-    if (nd < 4) { // back away from the nearest zombie
+    if (nd < 4) {
       pos.x = Math.max(2, Math.min(48, pos.x - (near.x - pos.x) / nd * 5));
       pos.z = Math.max(2, Math.min(48, pos.z - (near.z - pos.z) / nd * 5));
     }
     const eye = { x: pos.x, y: (me.y || 0) + 1.7, z: pos.z };
     const t = { x: near.x, y: near.y + 1.2, z: near.z };
-    const dx = t.x - eye.x, dy = t.y - eye.y, dz = t.z - eye.z;
-    socket.emit("shoot", { x: eye.x, y: eye.y, z: eye.z, dx, dy, dz, w: "pistol" });
+    socket.emit("shoot", { x: eye.x, y: eye.y, z: eye.z, dx: t.x-eye.x, dy: t.y-eye.y, dz: t.z-eye.z, w: "pistol" });
   }
   const lootList = lastSync.pickups || [];
   const loot = lootList.length
@@ -93,6 +109,7 @@ setTimeout(() => {
     "sync ships blobs + grenades": hasProjKeys,
     "wave-clear reward granted": gotReward,
     "zombies keep distance (>0.55)": minPairDist === Infinity || minPairDist > 0.55,
+    ...mapGeometryChecks,
   };
   let pass = true;
   for (const [k, v] of Object.entries(results)) {

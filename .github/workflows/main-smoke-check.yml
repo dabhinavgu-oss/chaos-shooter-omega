@@ -1,0 +1,25 @@
+name: Main Smoke Check
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  syntax:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - name: Apply runtime patches
+        run: node patch-server.js
+      - name: Check patched JavaScript
+        run: |
+          node --check patch-server.js
+          node --check server.js
+          node --check public/game.js
+          node --check public/home.js
+      - name: Check enemy catalogue
+        run: node -e "const e=require('./game/enemies').EXTENDED_KINDS; const n=Object.keys(e).length; if(n<100) throw new Error('Expected at least 100 enemy kinds, found '+n); console.log('enemy kinds:',n)"

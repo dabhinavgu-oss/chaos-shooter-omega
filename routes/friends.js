@@ -17,21 +17,23 @@ const verifyToken = (req, res, next) => {
   }
 };
 
-// Search registered players by username so friends can be found across browsers.
+// Search registered players by username or email so every account can find every other account.
 router.get('/search', verifyToken, async (req, res) => {
+  res.set('Cache-Control', 'no-store');
   const q = String(req.query.q || '').trim();
   if (q.length < 2) return res.json([]);
   try {
     const players = await dbAll(
-      `SELECT id, username FROM users
-       WHERE id != ? AND lower(username) LIKE lower(?)
-       ORDER BY lower(username) ASC
+      `SELECT id, username, email FROM users
+       WHERE (username ILIKE ? OR email ILIKE ?)
+       ORDER BY CASE WHEN lower(username) = lower(?) THEN 0 ELSE 1 END, lower(username) ASC
        LIMIT 10`,
-      [req.userId, `%${q}%`]
+      [`%${q}%`, `%${q}%`, q]
     );
 
     const results = [];
     for (const player of players) {
+      if (Number(player.id) === Number(req.userId)) continue;
       const relation = await dbGet(
         `SELECT status, user_id, friend_id FROM friends
          WHERE (user_id = ? AND friend_id = ?) OR (user_id = ? AND friend_id = ?)
@@ -85,16 +87,9 @@ router.post('/request', verifyToken, async (req, res) => {
       'INSERT INTO friends (user_id, friend_id, status) VALUES (?, ?, "pending")',
       [req.userId, target.id]
     );
-    res.json({
-      success: true,
-      fromUserId: req.userId,
-      toUserId: target.id,
-      toUsername: target.username
-    });
+    res.json({ success: true, fromUserId: req.userId, toUserId: target.id, toUsername: target.username });
   } catch (err) {
-    if (String(err.message).includes('UNIQUE')) {
-      return res.status(409).json({ error: 'Friend request already exists.' });
-    }
+    if (String(err.message).includes('UNIQUE')) return res.status(409).json({ error: 'Friend request already exists.' });
     res.status(500).json({ error: err.message });
   }
 });
@@ -108,14 +103,8 @@ router.post('/accept', verifyToken, async (req, res) => {
       [fromUserId, req.userId]
     );
     if (!pending) return res.status(404).json({ error: 'Friend request not found.' });
-    await dbRun(
-      'UPDATE friends SET status = "accepted" WHERE user_id = ? AND friend_id = ?',
-      [fromUserId, req.userId]
-    );
-    await dbRun(
-      'INSERT OR IGNORE INTO friends (user_id, friend_id, status) VALUES (?, ?, "accepted")',
-      [req.userId, fromUserId]
-    );
+    await dbRun('UPDATE friends SET status = "accepted" WHERE user_id = ? AND friend_id = ?', [fromUserId, req.userId]);
+    await dbRun('INSERT OR IGNORE INTO friends (user_id, friend_id, status) VALUES (?, ?, "accepted")', [req.userId, fromUserId]);
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });

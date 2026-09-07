@@ -19,10 +19,16 @@ const verifyToken = (req, res, next) => {
 
 // Send friend request
 router.post('/request', verifyToken, async (req, res) => {
-  const { targetUsername } = req.body;
+  const targetUsername = String(req.body.targetUsername || '').trim();
+  if (!targetUsername) return res.status(400).json({ error: 'Enter a username.' });
+
   try {
-    const target = await dbGet('SELECT id, username FROM users WHERE username = ?', [targetUsername]);
-    if (!target) return res.status(404).json({ error: 'User not found' });
+    // Username matching is case-insensitive, so PlayerOne and playerone work.
+    const target = await dbGet(
+      'SELECT id, username FROM users WHERE lower(username) = lower(?) LIMIT 1',
+      [targetUsername]
+    );
+    if (!target) return res.status(404).json({ error: `Player "${targetUsername}" was not found.` });
     if (Number(target.id) === Number(req.userId)) {
       return res.status(400).json({ error: 'You cannot send a friend request to yourself.' });
     }
@@ -42,8 +48,11 @@ router.post('/request', verifyToken, async (req, res) => {
       'INSERT INTO friends (user_id, friend_id, status) VALUES (?, ?, "pending")',
       [req.userId, target.id]
     );
-    res.json({ success: true, fromUserId: req.userId, fromUsername: targetUsername, toUserId: target.id, toUsername: target.username });
+    res.json({ success: true, fromUserId: req.userId, fromUsername: req.body.targetUsername, toUserId: target.id, toUsername: target.username });
   } catch (err) {
+    if (String(err.message).includes('UNIQUE')) {
+      return res.status(409).json({ error: 'Friend request already exists.' });
+    }
     res.status(500).json({ error: err.message });
   }
 });

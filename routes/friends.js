@@ -17,7 +17,6 @@ const verifyToken = (req, res, next) => {
   }
 };
 
-// Search registered players by username or email so every account can find every other account.
 router.get('/search', verifyToken, async (req, res) => {
   res.set('Cache-Control', 'no-store');
   const q = String(req.query.q || '').trim();
@@ -25,15 +24,14 @@ router.get('/search', verifyToken, async (req, res) => {
   try {
     const players = await dbAll(
       `SELECT id, username, email FROM users
-       WHERE (username ILIKE ? OR email ILIKE ?)
+       WHERE (username ILIKE ? OR email ILIKE ?) AND id != ?
        ORDER BY CASE WHEN lower(username) = lower(?) THEN 0 ELSE 1 END, lower(username) ASC
        LIMIT 10`,
-      [`%${q}%`, `%${q}%`, q]
+      [`%${q}%`, `%${q}%`, req.userId, q]
     );
 
     const results = [];
     for (const player of players) {
-      if (Number(player.id) === Number(req.userId)) continue;
       const relation = await dbGet(
         `SELECT status, user_id, friend_id FROM friends
          WHERE (user_id = ? AND friend_id = ?) OR (user_id = ? AND friend_id = ?)
@@ -55,7 +53,6 @@ router.get('/search', verifyToken, async (req, res) => {
   }
 });
 
-// Send friend request. Players can be found by username OR account email.
 router.post('/request', verifyToken, async (req, res) => {
   const targetInput = String(req.body.targetUsername || req.body.username || req.body.email || '').trim();
   if (!targetInput) return res.status(400).json({ error: 'Enter a username or email.' });
@@ -94,10 +91,10 @@ router.post('/request', verifyToken, async (req, res) => {
   }
 });
 
-// Accept friend request
 router.post('/accept', verifyToken, async (req, res) => {
   const { fromUserId } = req.body;
   try {
+    if (Number(fromUserId) === Number(req.userId)) return res.status(400).json({ error: 'Invalid self friend request.' });
     const pending = await dbGet(
       'SELECT user_id FROM friends WHERE user_id = ? AND friend_id = ? AND status = "pending"',
       [fromUserId, req.userId]
@@ -111,14 +108,13 @@ router.post('/accept', verifyToken, async (req, res) => {
   }
 });
 
-// Get friends list
 router.get('/list', verifyToken, async (req, res) => {
   try {
     const friends = await dbAll(
       `SELECT f.friend_id as id, u.username FROM friends f
        JOIN users u ON f.friend_id = u.id
-       WHERE f.user_id = ? AND f.status = "accepted"`,
-      [req.userId]
+       WHERE f.user_id = ? AND f.status = "accepted" AND f.friend_id != ?`,
+      [req.userId, req.userId]
     );
     res.json(friends);
   } catch (err) {
@@ -126,7 +122,6 @@ router.get('/list', verifyToken, async (req, res) => {
   }
 });
 
-// Get pending requests
 router.get('/pending', verifyToken, async (req, res) => {
   try {
     const pending = await dbAll(

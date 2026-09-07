@@ -17,18 +17,19 @@ const verifyToken = (req, res, next) => {
   }
 };
 
-// Send friend request
+// Send friend request. Players can be found by username OR account email.
 router.post('/request', verifyToken, async (req, res) => {
-  const targetUsername = String(req.body.targetUsername || '').trim();
-  if (!targetUsername) return res.status(400).json({ error: 'Enter a username.' });
+  const targetInput = String(req.body.targetUsername || req.body.username || req.body.email || '').trim();
+  if (!targetInput) return res.status(400).json({ error: 'Enter a username or email.' });
 
   try {
-    // Username matching is case-insensitive, so PlayerOne and playerone work.
     const target = await dbGet(
-      'SELECT id, username FROM users WHERE lower(username) = lower(?) LIMIT 1',
-      [targetUsername]
+      `SELECT id, username FROM users
+       WHERE lower(username) = lower(?) OR lower(email) = lower(?)
+       LIMIT 1`,
+      [targetInput, targetInput]
     );
-    if (!target) return res.status(404).json({ error: `Player "${targetUsername}" was not found.` });
+    if (!target) return res.status(404).json({ error: `Player "${targetInput}" was not found. Make sure they have registered on this game server.` });
     if (Number(target.id) === Number(req.userId)) {
       return res.status(400).json({ error: 'You cannot send a friend request to yourself.' });
     }
@@ -48,7 +49,13 @@ router.post('/request', verifyToken, async (req, res) => {
       'INSERT INTO friends (user_id, friend_id, status) VALUES (?, ?, "pending")',
       [req.userId, target.id]
     );
-    res.json({ success: true, fromUserId: req.userId, fromUsername: req.body.targetUsername, toUserId: target.id, toUsername: target.username });
+    res.json({
+      success: true,
+      fromUserId: req.userId,
+      fromUsername: req.body.targetUsername || req.body.username || req.body.email,
+      toUserId: target.id,
+      toUsername: target.username
+    });
   } catch (err) {
     if (String(err.message).includes('UNIQUE')) {
       return res.status(409).json({ error: 'Friend request already exists.' });

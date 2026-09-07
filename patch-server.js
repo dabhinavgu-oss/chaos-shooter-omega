@@ -22,7 +22,7 @@ if (!s.includes('CSO_START_ZOMBIE_V1')) {
 }
 
 if (!s.includes('CSO_MATCH_RULES_V1')) {
-  const rules=`\n  // CSO_MATCH_RULES_V1\n  socket.on("setGameOptions", (opts) => {\n    const p=players[socket.id]; if(!p) return;\n    const requested=String(opts&&opts.mode||"z1").toLowerCase();\n    p.gameMode=requested.startsWith("p")?"pvp":"zombies"; p.modeId=requested; p.mapId=String(opts&&opts.map||"delta");\n  });\n`;
+  const rules=`\n  // CSO_MATCH_RULES_V1\n  socket.on("setGameOptions", (opts) => {\n    const p=players[socket.id]; if(!p) return;\n    const requested=String(opts&&opts.mode||"z1").toLowerCase();\n    p.gameMode=requested.startsWith("p")?"pvp":"zombies"; p.modeId=requested; p.mapId=String(opts&&opts.map||"delta");\n    if(p.gameMode==="pvp" && Object.values(players).every(x=>x.gameMode==="pvp")) { enemies.length=0; budget=0; waveActive=false; intermission=0; }\n  });\n`;
   s=s.replace('  socket.on("setName", (name) => {',rules+'\n  socket.on("setName", (name) => {');
   s=s.replace('spectating: false,\n    invulnUntil:','spectating: false, gameMode:"zombies", modeId:"z1", mapId:"delta",\n    invulnUntil:');
   s=s.replace('      } else {\n        hurtPlayer(best.id, best.ref, spec.dmg * 10, socket.id);\n      }','      } else {\n        const target=best.ref;\n        if(shooter.gameMode!=="pvp" || target.gameMode!=="pvp") hurtPlayer(best.id,target,spec.dmg*10,socket.id);\n      }');
@@ -43,8 +43,12 @@ if (!s.includes('CSO_MAP_VOTE_V1')) {
   fs.writeFileSync(serverFile,s);
 }
 
-// Make all 100 server enemy kinds visually distinct even when they share the
-// same base voxel rig. This is deterministic per enemy kind.
+// PvP is a separate ruleset: no zombie wave spawning at all.
+if (!s.includes('CSO_PVP_NO_ZOMBIES_V1')) {
+  s=s.replace('  } else if (intermission > 0) {','  } else if (Object.values(players).some(p=>p.gameMode==="pvp")) {\n    // CSO_PVP_NO_ZOMBIES_V1\n    enemies.length=0; budget=0; waveActive=false; intermission=0;\n  } else if (intermission > 0) {');
+  fs.writeFileSync(serverFile,s);
+}
+
 const clientFile=path.join(__dirname,'public','game.js');
 let g=fs.readFileSync(clientFile,'utf8');
 if(!g.includes('CSO_100_LOOKS_V1')){
@@ -55,4 +59,18 @@ if(!g.includes('CSO_100_LOOKS_V1')){
 if(!g.includes('CSO_GAME_SOCKET_EXPORT_V1')){
   g=g.replace('const socket = io();','const socket = io();\n// CSO_GAME_SOCKET_EXPORT_V1\nwindow.csoGameSocket=socket; window.csoSetGameOptions=(mode,map)=>socket.emit("setGameOptions",{mode,map}); window.csoVoteMap=(map)=>socket.emit("mapVote",map);');
   fs.writeFileSync(clientFile,g);
+}
+
+// Wire the already-built home screen into shared voting/match rules and show
+// live friend online state from the existing friends API.
+const homeFile=path.join(__dirname,'public','home.js');
+let h=fs.readFileSync(homeFile,'utf8');
+if(!h.includes('CSO_HOME_WIRING_V1')){
+  h=h.replace("pending:[] }", "pending:[], voteCounts:{} } // CSO_HOME_WIRING_V1");
+  h=h.replace("${x[0]===state.map?'YOUR VOTE':''}", "${(state.voteCounts[x[0]]||0)} VOTES");
+  h=h.replace("state.map=b.dataset.map;localStorage.setItem(MAP_KEY,state.map);notify('Map vote: '+b.textContent.replace(/\\d+\\. /,''));renderHome();", "state.map=b.dataset.map;localStorage.setItem(MAP_KEY,state.map);if(window.csoVoteMap)window.csoVoteMap(state.map);notify('Map vote: '+b.textContent.replace(/\\d+\\. /,''));renderHome();");
+  h=h.replace("<span class=\"online\">ONLINE / FRIEND</span>", "<span class=\"${f.online?'online':'offline'}\">${f.online?'ONLINE':'OFFLINE'} / FRIEND</span>");
+  h=h.replace("$('playSelected').onclick=()=>{localStorage.setItem(MODE_KEY,state.mode);", "$('playSelected').onclick=()=>{if(window.csoSetGameOptions)window.csoSetGameOptions(state.mode,state.map);localStorage.setItem(MODE_KEY,state.mode);");
+  h=h.replace("  function renderHome(){", "  if(window.csoGameSocket && !window.__csoMapVoteListener){ window.__csoMapVoteListener=true; window.csoGameSocket.on('mapVotes',d=>{state.voteCounts=d.votes||{}; if(d.winner)state.map=d.winner; renderHome();}); }\n  function renderHome(){");
+  fs.writeFileSync(homeFile,h);
 }

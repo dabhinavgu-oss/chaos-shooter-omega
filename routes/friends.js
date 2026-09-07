@@ -17,6 +17,42 @@ const verifyToken = (req, res, next) => {
   }
 };
 
+// Search registered players by username so friends can be found across browsers.
+router.get('/search', verifyToken, async (req, res) => {
+  const q = String(req.query.q || '').trim();
+  if (q.length < 2) return res.json([]);
+  try {
+    const players = await dbAll(
+      `SELECT id, username FROM users
+       WHERE id != ? AND lower(username) LIKE lower(?)
+       ORDER BY lower(username) ASC
+       LIMIT 10`,
+      [req.userId, `%${q}%`]
+    );
+
+    const results = [];
+    for (const player of players) {
+      const relation = await dbGet(
+        `SELECT status, user_id, friend_id FROM friends
+         WHERE (user_id = ? AND friend_id = ?) OR (user_id = ? AND friend_id = ?)
+         LIMIT 1`,
+        [req.userId, player.id, player.id, req.userId]
+      );
+      results.push({
+        id: player.id,
+        username: player.username,
+        status: relation?.status === 'accepted' ? 'friends'
+          : relation?.status === 'pending' && Number(relation.user_id) === Number(req.userId) ? 'sent'
+          : relation?.status === 'pending' ? 'received'
+          : 'none'
+      });
+    }
+    res.json(results);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Send friend request. Players can be found by username OR account email.
 router.post('/request', verifyToken, async (req, res) => {
   const targetInput = String(req.body.targetUsername || req.body.username || req.body.email || '').trim();
@@ -52,7 +88,6 @@ router.post('/request', verifyToken, async (req, res) => {
     res.json({
       success: true,
       fromUserId: req.userId,
-      fromUsername: req.body.targetUsername || req.body.username || req.body.email,
       toUserId: target.id,
       toUsername: target.username
     });

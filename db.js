@@ -1,12 +1,16 @@
 const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
+const fs = require('fs');
 
-const dbPath = path.join(__dirname, 'game.db');
+// Render persistent disks are normally mounted at /var/data. Keep the local
+// fallback for development, but use the persistent location in production so
+// accounts, profiles, friends, rewards, and stats survive redeploys/restarts.
+const persistentDir = process.env.RENDER ? '/var/data' : path.join(__dirname, 'data');
+if (!fs.existsSync(persistentDir)) fs.mkdirSync(persistentDir, { recursive: true });
+const dbPath = process.env.DATABASE_PATH || path.join(persistentDir, 'game.db');
 const db = new sqlite3.Database(dbPath);
 
-// Render can start with a brand-new SQLite file. Build the schema first and make
-// every query wait for that work to finish, so requests can never race the
-// CREATE TABLE statements and produce "no such table: users".
+// Build the schema first and make every query wait for that work to finish.
 const schema = [
   `CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -113,7 +117,6 @@ const dbReady = new Promise((resolve, reject) => {
   });
 });
 
-// Promise-based query wrappers. Every operation waits for schema creation.
 const dbRun = async (sql, params = []) => {
   await dbReady;
   return new Promise((resolve, reject) => {

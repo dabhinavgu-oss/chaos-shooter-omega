@@ -1,0 +1,24 @@
+name: Game Simulation
+
+on:
+  push:
+    branches: [game-simulation]
+
+jobs:
+  simulate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm install
+      - name: Start server
+        run: node patch-server.js & node server.js &
+      - name: Run headless game simulation
+        run: node test_client.js

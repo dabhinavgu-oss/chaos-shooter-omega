@@ -16,3 +16,13 @@ if (!s.includes('CSO_GRENADE_PATCH_V1')) {
   s = s.replace('players, enemies, wave, pickups, reviveCards,', 'players, enemies, wave, pickups, reviveCards, grenades,');
   fs.writeFileSync(file, s);
 }
+
+// Make the first zombie visible immediately after a client connects.
+// The normal 30Hz loop still controls all subsequent spawning.
+if (!s.includes('CSO_START_ZOMBIE_V1')) {
+  s = s.replace(
+    '  socket.emit("init", {',
+    '  // CSO_START_ZOMBIE_V1\n  if (enemies.length === 0) enemies.push(makeEnemy());\n\n  socket.emit("init", {'
+  );
+  fs.writeFileSync(file, s);
+}

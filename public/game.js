@@ -1,1 +1,1 @@
-/* PATCH: safe damage flash */
+/* RESTORE FROM ORIGINAL BLOB c09fdda787bf1bd3425c3af6c3cc49830ec9d942 */

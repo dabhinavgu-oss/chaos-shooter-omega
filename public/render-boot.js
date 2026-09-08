@@ -15,4 +15,4 @@
   };
   setTimeout(boot, 0);
   setTimeout(boot, 250);
-});
+})();

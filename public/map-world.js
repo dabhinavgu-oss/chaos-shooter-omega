@@ -7,6 +7,7 @@
   const GROUP_NAME = '__CSO_MAP_GEOMETRY__';
   let group = null;
   let collision = [];
+  let stairs = [];
   let builtFor = '';
 
   const mats = {};
@@ -22,6 +23,7 @@
     group.name = GROUP_NAME;
     scene.add(group);
     collision = [];
+    stairs = [];
   }
 
   function box(x, y, z, sx, sy, sz, color, solid = true) {
@@ -49,10 +51,19 @@
     const baseY = groundHeightAt(x, z);
     box(x, baseY + h/2, z, 2.4, h, 2.4, color, true);
     box(x, baseY + h + 0.35, z, 4.0, 0.35, 4.0, 0x37474f, true);
+    // Real climbable steps on the south (+Z) side. They are visual geometry;
+    // movement-fix.js supplies the matching step heights so players can walk up.
+    const stepCount = Math.max(8, Math.ceil(h * 2));
+    const run = 5.0;
+    for (let i = 0; i < stepCount; i++) {
+      const stepH = h * (i + 1) / stepCount;
+      const stepZ = z + 2.4 + run - (i + 0.5) * (run / stepCount);
+      box(x, baseY + stepH / 2, stepZ, 2.0, stepH, run / stepCount + 0.08, 0x6d7478, false);
+      stairs.push({ x, z: stepZ, w: 2.0, d: run / stepCount + 0.08, top: baseY + stepH });
+    }
     for (const [dx,dz] of [[-1.7,-1.7],[1.7,-1.7],[-1.7,1.7],[1.7,1.7]]) {
       box(x+dx, baseY+h+1.0, z+dz, 0.25, 1.3, 0.25, 0x263238, false);
     }
-    for (let i=0;i<4;i++) box(x-2.0+i*0.5, baseY+0.15+i*(h/4), z+2.0, 0.55, 0.3+i*0.15, 1.0, 0x6d7478, false);
   }
 
   function building(x, z, w, d, h, color = 0x59636b, doorAxis = 'x') {
@@ -174,12 +185,25 @@
     builtFor = map;
   }
 
+  // Height supplied by map structures such as the climbable outpost stairs.
+  window.getMapGroundHeightAt = function(wx, wz) {
+    let h = groundHeightAt(wx, wz);
+    for (const s of stairs) {
+      if (wx >= s.x - s.w/2 && wx <= s.x + s.w/2 && wz >= s.z - s.d/2 && wz <= s.z + s.d/2) {
+        h = Math.max(h, s.top);
+      }
+    }
+    return h;
+  };
+
   function pushOut(p) {
     if(!p || !collision.length) return;
     for(let pass=0;pass<2;pass++){
       for(const c of collision){
         const r=0.42;
         const minX=c.x-r, maxX=c.x+c.w+r, minZ=c.z-r, maxZ=c.z+c.d+r;
+        // If the player is standing on top of this object, don't push them sideways.
+        if (p.y >= groundHeightAt(p.x,p.z) + c.h - 0.2) continue;
         if(p.x>minX && p.x<maxX && p.z>minZ && p.z<maxZ && p.y < groundHeightAt(p.x,p.z)+c.h+1.2){
           const left=Math.abs(p.x-minX), right=Math.abs(maxX-p.x), top=Math.abs(p.z-minZ), bottom=Math.abs(maxZ-p.z);
           const m=Math.min(left,right,top,bottom);

@@ -1,1 +1,1 @@
-/* RESTORE ORIGINAL GAME CLIENT */
+/* temporary */

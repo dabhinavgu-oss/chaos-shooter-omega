@@ -1,0 +1,33 @@
+/* Play-screen repair: keep the HUD above the WebGL canvas and place the hotbar visibly. */
+#hotbar {
+  position: fixed;
+  left: 50%;
+  bottom: 112px;
+  transform: translateX(-50%);
+  z-index: 6;
+  display: flex;
+  gap: 6px;
+  margin: 0;
+  pointer-events: none;
+}
+#hotbar .slot {
+  position: relative;
+  width: 64px;
+  height: 52px;
+  background: rgba(8,12,6,.82);
+  border: 3px solid #2c5d1c;
+  box-shadow: 4px 4px 0 rgba(0,0,0,.45);
+  color: #f2f5ec;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  font-family: 'Press Start 2P','Courier New',monospace;
+  font-size: 8px;
+}
+#hotbar .slot.sel { border-color: #ffee44; transform: translateY(-4px); }
+#hotbar .slot .num { position:absolute; left:5px; top:4px; font-size:7px; color:#b8c9a6; }
+#hotbar .slot .lbl { margin-top:5px; }
+#hotbar .slot .count { margin-top:5px; color:#ffee44; font-size:7px; }
+#hud { position: relative; z-index: 5; }
+#healthWrap, #ammo { z-index: 6; }

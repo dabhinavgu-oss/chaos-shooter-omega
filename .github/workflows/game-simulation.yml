@@ -20,5 +20,7 @@ jobs:
         run: npm install
       - name: Start server
         run: node patch-server.js & node server.js &
-      - name: Run headless game simulation
+      - name: Run comprehensive simulation
+        run: node test_everything.js
+      - name: Run gameplay regression simulation
         run: node test_client.js

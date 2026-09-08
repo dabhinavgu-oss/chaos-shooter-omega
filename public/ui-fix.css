@@ -1,0 +1,19 @@
+/* Reliable in-game HUD + sniper scope. Loaded after the main stylesheet. */
+#hud { position:fixed !important; inset:0; z-index:30 !important; pointer-events:none !important; }
+#crosshair { display:block !important; z-index:35 !important; }
+#hotbar { display:flex !important; position:fixed !important; left:50% !important; bottom:18px !important; transform:translateX(-50%) !important; z-index:35 !important; gap:5px; pointer-events:none !important; }
+#hotbar .slot { min-width:62px; height:58px; padding:7px 6px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px; background:rgba(8,12,6,.86); border:3px solid #2c5d1c; box-shadow:4px 4px 0 rgba(0,0,0,.45); color:#f2f5ec; font:9px 'Press Start 2P','Courier New',monospace; }
+#hotbar .slot.sel { border-color:#ffee44; transform:translateY(-5px); color:#ffee44; }
+#hotbar .slot .num { font-size:8px; opacity:.7; }
+#hotbar .slot .lbl { font-size:9px; }
+#hotbar .slot .count { font-size:8px; opacity:.85; }
+#sniperCrosshair { display:none; position:fixed; inset:0; z-index:36; pointer-events:none; }
+#sniperCrosshair::before,#sniperCrosshair::after { content:''; position:absolute; background:rgba(245,245,245,.9); box-shadow:0 0 2px #000; }
+#sniperCrosshair::before { left:50%; top:7%; bottom:7%; width:2px; transform:translateX(-50%); }
+#sniperCrosshair::after { top:50%; left:7%; right:7%; height:2px; transform:translateY(-50%); }
+#sniperCrosshair i { position:absolute; left:50%; top:50%; width:170px; height:170px; transform:translate(-50%,-50%); border:2px solid rgba(245,245,245,.9); border-radius:50%; box-shadow:0 0 2px #000; }
+#sniperCrosshair b,#sniperCrosshair em,#sniperCrosshair span { position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); }
+#sniperCrosshair b { width:22px; height:2px; background:#ffee44; }
+#sniperCrosshair em { width:2px; height:22px; background:#ffee44; }
+#sniperCrosshair span { width:5px; height:5px; background:#ffee44; border-radius:50%; }
+@media(max-width:700px){#hotbar .slot{min-width:44px;width:44px;height:44px;font-size:7px}#sniperCrosshair i{width:130px;height:130px}}

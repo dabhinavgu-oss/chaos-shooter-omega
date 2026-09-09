@@ -1,35 +1,26 @@
-/* HUD visibility + reliable crosshair + sniper scope UI safety net. */
+/* HUD visibility + guaranteed crosshair / sniper scope. */
 (() => {
-  function addNormalCrosshair() {
-    if (document.getElementById('normalCrosshair')) return;
-    const el = document.createElement('div');
-    el.id = 'normalCrosshair';
-    el.innerHTML = '<i></i>';
-    document.body.appendChild(el);
+  function add(id, html){
+    if(document.getElementById(id)) return;
+    const el=document.createElement('div'); el.id=id; el.innerHTML=html; document.body.appendChild(el);
   }
-  function addSniperScope() {
-    if (document.getElementById('sniperCrosshair')) return;
-    const el = document.createElement('div');
-    el.id = 'sniperCrosshair';
-    el.innerHTML = '<i></i><b></b><em></em><span></span>';
-    document.body.appendChild(el);
-  }
-  function ensureUI() {
-    const hud=document.getElementById('hud'), hot=document.getElementById('hotbar');
+  function ensure(){
+    add('normalCrosshair','<i></i>');
+    add('sniperCrosshair','<i></i><b></b><em></em><span></span>');
+    const hud=document.getElementById('hud'),hot=document.getElementById('hotbar');
     if(hud){hud.style.display='block';hud.style.visibility='visible';}
     if(hot){hot.style.display='flex';hot.style.visibility='visible';}
   }
-  function updateScope() {
-    const scope=document.getElementById('sniperCrosshair'), normal=document.getElementById('normalCrosshair');
-    if(!scope||!normal)return;
+  function update(){
+    ensure();
+    const n=document.getElementById('normalCrosshair'),s=document.getElementById('sniperCrosshair');
     let sniper=false;
     try{sniper=typeof currentSlot==='function'&&currentSlot().id==='sniper';}catch(_){ }
-    const active=typeof running!=='undefined'&&running;
-    normal.style.setProperty('display', (!sniper&&active)?'block':'none', 'important');
-    scope.style.setProperty('display', (sniper&&active)?'block':'none', 'important');
+    n.style.setProperty('display',sniper?'none':'block','important');
+    s.style.setProperty('display',sniper?'block':'none','important');
   }
-  addNormalCrosshair(); addSniperScope(); ensureUI();
-  setTimeout(ensureUI,250); setTimeout(ensureUI,1000);
-  setInterval(updateScope,50);
-  document.addEventListener('click',()=>{ensureUI();updateScope();},true);
+  ensure(); update();
+  setTimeout(ensure,250); setTimeout(update,500); setTimeout(update,1500);
+  setInterval(update,100);
+  document.addEventListener('click',update,true);
 })();

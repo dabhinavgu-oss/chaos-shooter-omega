@@ -1,4 +1,4 @@
-/* Reliable in-game HUD + normal crosshair + sniper scope. Loaded after the main stylesheet. */
+/* Reliable in-game HUD + normal crosshair + sniper scope. */
 #hud { position:fixed !important; inset:0; z-index:30 !important; pointer-events:none !important; }
 #crosshair { display:none !important; }
 #hotbar { display:flex !important; position:fixed !important; left:50% !important; bottom:18px !important; transform:translateX(-50%) !important; z-index:35 !important; gap:5px; pointer-events:none !important; }
@@ -7,19 +7,15 @@
 #hotbar .slot .num { font-size:8px; opacity:.7; }
 #hotbar .slot .lbl { font-size:9px; }
 #hotbar .slot .count { font-size:8px; opacity:.85; }
-#normalCrosshair, #sniperCrosshair { display:none; position:fixed; inset:0; z-index:36; pointer-events:none; }
-#normalCrosshair::before,#normalCrosshair::after,#sniperCrosshair::before,#sniperCrosshair::after { content:''; position:absolute; background:rgba(255,255,255,.96); box-shadow:0 0 2px #000; }
-#normalCrosshair::before { left:50%; top:50%; width:28px; height:4px; transform:translate(-50%,-50%); }
-#normalCrosshair::after { top:50%; left:50%; width:4px; height:28px; transform:translate(-50%,-50%); }
-#normalCrosshair i,#normalCrosshair b,#normalCrosshair em,#normalCrosshair span { position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); }
-#normalCrosshair i { width:6px; height:6px; border:2px solid #ffee44; border-radius:50%; }
-#normalCrosshair b,#normalCrosshair em { display:none; }
-#normalCrosshair span { width:2px; height:2px; background:#fff; }
-#sniperCrosshair::before { left:50%; top:7%; bottom:7%; width:2px; transform:translateX(-50%); }
-#sniperCrosshair::after { top:50%; left:7%; right:7%; height:2px; transform:translateY(-50%); }
-#sniperCrosshair i { position:absolute; left:50%; top:50%; width:170px; height:170px; transform:translate(-50%,-50%); border:2px solid rgba(245,245,245,.9); border-radius:50%; box-shadow:0 0 2px #000; }
-#sniperCrosshair b,#sniperCrosshair em,#sniperCrosshair span { position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); }
-#sniperCrosshair b { width:22px; height:2px; background:#ffee44; }
-#sniperCrosshair em { width:2px; height:22px; background:#ffee44; }
-#sniperCrosshair span { width:5px; height:5px; background:#ffee44; border-radius:50%; }
-@media(max-width:700px){#hotbar .slot{min-width:44px;width:44px;height:44px;font-size:7px}#sniperCrosshair i{width:130px;height:130px}}
+#normalCrosshair { display:block !important; position:fixed !important; inset:0; z-index:80 !important; pointer-events:none !important; }
+#sniperCrosshair { display:none !important; position:fixed !important; inset:0; z-index:81 !important; pointer-events:none !important; }
+#normalCrosshair::before,#normalCrosshair::after { content:''; position:absolute; background:#fff; box-shadow:0 0 4px #000; }
+#normalCrosshair::before { left:50%; top:50%; width:30px; height:4px; transform:translate(-50%,-50%); }
+#normalCrosshair::after { top:50%; left:50%; width:4px; height:30px; transform:translate(-50%,-50%); }
+#normalCrosshair i { position:absolute; left:50%; top:50%; width:7px; height:7px; transform:translate(-50%,-50%); border:2px solid #ffee44; border-radius:50%; }
+#sniperCrosshair::before { content:''; position:absolute; left:50%; top:5%; bottom:5%; width:2px; transform:translateX(-50%); background:#fff; box-shadow:0 0 3px #000; }
+#sniperCrosshair::after { content:''; position:absolute; top:50%; left:5%; right:5%; height:2px; transform:translateY(-50%); background:#fff; box-shadow:0 0 3px #000; }
+#sniperCrosshair i { position:absolute; left:50%; top:50%; width:180px; height:180px; transform:translate(-50%,-50%); border:2px solid #fff; border-radius:50%; box-shadow:0 0 3px #000; }
+#sniperCrosshair b { position:absolute; left:50%; top:50%; width:24px; height:2px; transform:translate(-50%,-50%); background:#ffee44; }
+#sniperCrosshair em { position:absolute; left:50%; top:50%; width:2px; height:24px; transform:translate(-50%,-50%); background:#ffee44; }
+#sniperCrosshair span { position:absolute; left:50%; top:50%; width:5px; height:5px; transform:translate(-50%,-50%); background:#ffee44; border-radius:50%; }

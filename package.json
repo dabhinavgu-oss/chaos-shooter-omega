@@ -4,7 +4,7 @@
   "description": "Authoritative multiplayer 3D voxel FPS (co-op waves + PvP + parties + friends)",
   "main": "server.js",
   "scripts": {
-    "start": "node patch-server.js && node server.js",
+    "start": "node patch-server.js && node server-map-patch.js && node server.js",
     "init-db": "node init-db.js"
   },
   "dependencies": {

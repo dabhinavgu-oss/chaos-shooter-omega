@@ -67,6 +67,7 @@ function csoShotBlocked(mapId,o,d,maxT) {
 
   s=s.replace('    if (dist > 1.2 && !staggered) {\n      e.x += (dx / dist) * spd * dt;\n      e.z += (dz / dist) * spd * dt;\n      e.y = groundHeightAt(e.x, e.z);\n    }',
 `    if (dist > 1.2 && !staggered) {
+      e.mapId = target.mapId || e.mapId || "delta";
       const nx=e.x+(dx/dist)*spd*dt, nz=e.z+(dz/dist)*spd*dt;
       const moved=csoMoveEntity(e.mapId,nx,nz,e.y);
       e.x=moved.x; e.z=moved.z;
